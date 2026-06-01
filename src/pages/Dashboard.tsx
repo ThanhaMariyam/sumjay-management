@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useStudents, useAttendance, useFees } from '../lib/hooks';
+import { useStudents, useAttendance, useFees, useMembers } from '../lib/hooks';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Users, CalendarCheck, IndianRupee, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
@@ -14,6 +14,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts';
+import { useAuth } from '../lib/AuthContext';
 
 type CompactTooltipProps = {
   active?: boolean;
@@ -35,9 +36,12 @@ function CompactTooltip({ active, payload }: CompactTooltipProps) {
 }
 
 const DEFAULT_FEE_AMOUNT = 1000;
+const DEFAULT_FUND_AMOUNT = 100;
 
 export default function Dashboard() {
+  const { isMembershipAdmin } = useAuth();
   const { students, loading: sl } = useStudents();
+  const { members, loading: ml } = useMembers();
   const { attendance, loading: al } = useAttendance();
   const { fees, loading: fl } = useFees();
   const [now, setNow] = useState(new Date());
@@ -77,7 +81,8 @@ export default function Dashboard() {
     const paidAmount = typeof fee.paidAmount === 'number' ? fee.paidAmount : expectedAmount;
     return !isAmountEqual(paidAmount, expectedAmount);
   }).length;
-  const pendingCount = Math.max(students.length - paidCount - partialPaidCount, 0);
+  const activePeople = isMembershipAdmin ? members : students;
+  const pendingCount = Math.max(activePeople.length - paidCount - partialPaidCount, 0);
   const monthlyReceivedAmount = monthFees.reduce((sum, fee) => {
     if (fee.status !== 'paid') return sum;
     const amount = typeof fee.paidAmount === 'number' ? fee.paidAmount : (fee.amount ?? 0);
@@ -100,30 +105,31 @@ export default function Dashboard() {
   ], [paidCount, partialPaidCount, pendingCount]);
 
   const dueStudents = useMemo(() => {
-    return students
+    const fallbackAmount = isMembershipAdmin ? DEFAULT_FUND_AMOUNT : DEFAULT_FEE_AMOUNT;
+    return activePeople
       .map((student) => {
         const record = monthFeeMap[student.id!];
-        const expectedAmount = typeof record?.amount === 'number' && record.amount >= 0 ? record.amount : DEFAULT_FEE_AMOUNT;
+        const expectedAmount = typeof record?.amount === 'number' && record.amount >= 0 ? record.amount : fallbackAmount;
         const paidAmount = record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? expectedAmount) : 0;
         const balanceAmount = Math.max(expectedAmount - paidAmount, 0);
         return {
           id: student.id!,
           name: student.name,
-          parentMobile: student.parentMobile,
+          parentMobile: isMembershipAdmin ? (student.phoneNumber || '') : student.parentMobile,
           paidAmount,
           balanceAmount,
           status: paidAmount <= 0 ? 'UNPAID' : 'PARTIAL PAID',
         };
       })
       .filter((row) => row.balanceAmount > 0);
-  }, [students, monthFeeMap]);
+  }, [activePeople, monthFeeMap, isMembershipAdmin]);
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-        <h1 className="text-3xl font-bold tracking-tight text-purple-600">Dashboard</h1>
-        <p className="text-gray-500">Overview of Sumjay Football Camp student activity.</p>
+        <h1 className="text-3xl font-bold tracking-tight text-primary">Dashboard</h1>
+        <p className="text-gray-500">{isMembershipAdmin ? 'Overview of membership data.' : 'Overview of Sumjay Football Camp student activity.'}</p>
         </div>
         <div className="flex items-stretch gap-2 self-start md:self-auto">
           <div className="rounded-md border bg-white px-4 py-2 text-sm text-gray-700 shadow-sm min-w-[250px]">
@@ -135,7 +141,7 @@ export default function Dashboard() {
             onClick={() => setDueDialogOpen(true)}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            Due Students
+            Due {isMembershipAdmin ? 'Members' : 'Students'}
           </Button>
         </div>
       </div>
@@ -143,16 +149,16 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Students</CardTitle>
+            <CardTitle className="text-sm font-medium">{isMembershipAdmin ? 'Total Members' : 'Total Students'}</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{sl ? '...' : students.length}</div>
+            <div className="text-2xl font-bold">{isMembershipAdmin ? (ml ? '...' : members.length) : (sl ? '...' : students.length)}</div>
             <p className="text-xs text-muted-foreground">Registered in the system</p>
           </CardContent>
         </Card>
 
-        <Card>
+        {!isMembershipAdmin && <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Today's Attendance</CardTitle>
             <CalendarCheck className="h-4 w-4 text-muted-foreground" />
@@ -167,19 +173,21 @@ export default function Dashboard() {
                 <span className="text-xs text-gray-500 font-medium">{(students.length - todaysAttendance.length)} Unmarked</span>
             </div>
           </CardContent>
-        </Card>
+        </Card>}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Fees this Month</CardTitle>
+            <CardTitle className="text-sm font-medium">{isMembershipAdmin ? 'Fund this Month' : 'Fees this Month'}</CardTitle>
             <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-                {fl || sl ? '...' : `${paidCount} Paid`}
+                {fl ? '...' : (isMembershipAdmin ? formatAmount(monthlyReceivedAmount) : `${paidCount} Paid`)}
             </div>
-            <p className="text-xs text-amber-600 font-medium">{partialPaidCount} Partial Paid</p>
-            <p className="text-xs text-orange-600 font-medium">{pendingCount} Pending</p>
+            {!isMembershipAdmin && <>
+              <p className="text-xs text-amber-600 font-medium">{partialPaidCount} Partial Paid</p>
+              <p className="text-xs text-orange-600 font-medium">{pendingCount} Pending</p>
+            </>}
           </CardContent>
         </Card>
 
@@ -198,7 +206,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
+        {!isMembershipAdmin && <Card>
           <CardHeader>
             <CardTitle>Attendance Distribution</CardTitle>
             <CardDescription>Today's present, absent and unmarked students</CardDescription>
@@ -225,12 +233,12 @@ export default function Dashboard() {
               ))}
             </div>
           </CardContent>
-        </Card>
+        </Card>}
 
         <Card>
           <CardHeader>
-            <CardTitle>Fee Status This Month</CardTitle>
-            <CardDescription>Paid vs pending students</CardDescription>
+            <CardTitle>{isMembershipAdmin ? 'Fund Status This Month' : 'Fee Status This Month'}</CardTitle>
+            <CardDescription>{isMembershipAdmin ? 'Paid vs pending members' : 'Paid vs pending students'}</CardDescription>
           </CardHeader>
           <CardContent className="h-[100px] pt-0">
             <div className="h-[68px]">
@@ -255,10 +263,29 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
+
+        {isMembershipAdmin && <Card>
+            <CardHeader>
+                <CardTitle>Fund Notifications</CardTitle>
+                <CardDescription>Monthly fund follow-ups</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <p className="text-sm text-gray-500 mb-4">
+                   {todayDate > 3 ? (
+                       <span className="flex items-center text-red-600 gap-1"><AlertCircle className="w-4 h-4"/> Overdue: Please notify pending fund payments.</span>
+                   ) : (
+                       "Fund is due by the 3rd of the month."
+                   )}
+                </p>
+                <Button asChild variant="secondary" className="w-full sm:w-auto">
+                    <Link to="/fees">View Fund & Notify</Link>
+                </Button>
+            </CardContent>
+        </Card>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
+          {!isMembershipAdmin && <Card>
               <CardHeader>
                   <CardTitle>Attendance Actions</CardTitle>
                   <CardDescription>Mark attendance or send notifications</CardDescription>
@@ -271,9 +298,9 @@ export default function Dashboard() {
                       <Link to="/attendance">Mark Attendance Now</Link>
                   </Button>
               </CardContent>
-          </Card>
+          </Card>}
 
-          <Card>
+          {!isMembershipAdmin && <Card>
               <CardHeader>
                   <CardTitle>Fee Reminders</CardTitle>
                   <CardDescription>Monthly fee status and follow-ups</CardDescription>
@@ -290,19 +317,19 @@ export default function Dashboard() {
                       <Link to="/fees">View Fees & Notify</Link>
                   </Button>
               </CardContent>
-          </Card>
+          </Card>}
       </div>
 
       <Dialog open={dueDialogOpen} onOpenChange={setDueDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Due Students ({format(new Date(`${monthStr}-01`), 'MMMM yyyy')})</DialogTitle>
+            <DialogTitle>Due {isMembershipAdmin ? 'Members' : 'Students'} ({format(new Date(`${monthStr}-01`), 'MMMM yyyy')})</DialogTitle>
           </DialogHeader>
           <div className="max-h-[420px] overflow-auto border rounded-md">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Student</TableHead>
+                  <TableHead>{isMembershipAdmin ? 'Member' : 'Student'}</TableHead>
                   <TableHead>Paid</TableHead>
                   <TableHead>Balance</TableHead>
                   <TableHead>Status</TableHead>
@@ -312,7 +339,7 @@ export default function Dashboard() {
                 {dueStudents.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-gray-500 py-8">
-                      No unpaid or partial-paid students for this month.
+                      No unpaid or partial-paid {isMembershipAdmin ? 'members' : 'students'} for this month.
                     </TableCell>
                   </TableRow>
                 ) : (

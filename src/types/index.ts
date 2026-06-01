@@ -1,3 +1,5 @@
+export type AdminRole = 'student' | 'membership';
+
 export interface Student {
   id?: string;
   adminId: string;
@@ -6,6 +8,21 @@ export interface Student {
   place: string;
   photoURL?: string;
   parentMobile: string;
+  phoneNumber?: string;
+  bloodGroup?: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface Member {
+  id?: string;
+  adminId: string;
+  name: string;
+  dob: string;
+  place: string;
+  phoneNumber: string;
+  bloodGroup: string;
+  photoURL?: string;
   createdAt: number;
   updatedAt?: number;
 }

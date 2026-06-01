@@ -23,9 +23,11 @@ import {
 } from 'date-fns';
 import { downloadCsvFile, downloadPdfTable } from '../lib/reportExport';
 import { Fee } from '../types';
+import { useAuth } from '../lib/AuthContext';
 
 type FilterType = 'day' | 'week' | 'month' | 'year';
 const DEFAULT_FEE_AMOUNT = 1000;
+const DEFAULT_FUND_AMOUNT = 100;
 const PAGE_SIZE = 10;
 
 function getDateRange(filterType: FilterType) {
@@ -59,7 +61,9 @@ function getFeeRecordDate(fee: Fee) {
 }
 
 export default function Reports() {
-  const { students } = useStudents();
+  const { isMembershipAdmin } = useAuth();
+  const defaultAmount = isMembershipAdmin ? DEFAULT_FUND_AMOUNT : DEFAULT_FEE_AMOUNT;
+  const { students } = useStudents(isMembershipAdmin ? 'members' : 'students');
   const { attendance } = useAttendance();
   const { fees } = useFees();
   const [filterType, setFilterType] = useState<FilterType>('month');
@@ -171,7 +175,7 @@ export default function Reports() {
     return filteredFees.map((fee) => {
       const recordDate = getFeeRecordDate(fee);
       const normalizedStatus = String(fee.status || '').toLowerCase();
-      const expectedAmount = typeof fee.amount === 'number' && fee.amount >= 0 ? fee.amount : DEFAULT_FEE_AMOUNT;
+      const expectedAmount = typeof fee.amount === 'number' && fee.amount >= 0 ? fee.amount : defaultAmount;
       const paidAmount = normalizedStatus === 'paid'
         ? (typeof fee.paidAmount === 'number' && fee.paidAmount >= 0 ? fee.paidAmount : expectedAmount)
         : 0;
@@ -188,22 +192,22 @@ export default function Reports() {
         Status: displayStatus,
       };
     });
-  }, [filteredFees, studentMap]);
+  }, [filteredFees, studentMap, defaultAmount]);
 
   const feesSummary = useMemo(() => {
     const totalExpected = filteredFees.reduce((sum, fee) => {
-      const amount = typeof fee.amount === 'number' && fee.amount >= 0 ? fee.amount : DEFAULT_FEE_AMOUNT;
+      const amount = typeof fee.amount === 'number' && fee.amount >= 0 ? fee.amount : defaultAmount;
       return sum + amount;
     }, 0);
     const totalCollected = filteredFees.reduce((sum, fee) => {
       const normalizedStatus = String(fee.status || '').toLowerCase();
       if (normalizedStatus !== 'paid') return sum;
-      const expectedAmount = typeof fee.amount === 'number' && fee.amount >= 0 ? fee.amount : DEFAULT_FEE_AMOUNT;
+      const expectedAmount = typeof fee.amount === 'number' && fee.amount >= 0 ? fee.amount : defaultAmount;
       const paidAmount = typeof fee.paidAmount === 'number' && fee.paidAmount >= 0 ? fee.paidAmount : expectedAmount;
       return sum + paidAmount;
     }, 0);
     const totalPending = filteredFees.reduce((sum, fee) => {
-      const expectedAmount = typeof fee.amount === 'number' && fee.amount >= 0 ? fee.amount : DEFAULT_FEE_AMOUNT;
+      const expectedAmount = typeof fee.amount === 'number' && fee.amount >= 0 ? fee.amount : defaultAmount;
       const normalizedStatus = String(fee.status || '').toLowerCase();
       const paidAmount = normalizedStatus === 'paid'
         ? (typeof fee.paidAmount === 'number' && fee.paidAmount >= 0 ? fee.paidAmount : expectedAmount)
@@ -211,7 +215,7 @@ export default function Reports() {
       return sum + Math.max(expectedAmount - paidAmount, 0);
     }, 0);
     return { totalExpected, totalCollected, totalPending };
-  }, [filteredFees]);
+  }, [filteredFees, defaultAmount]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value);
@@ -307,7 +311,7 @@ export default function Reports() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-primary">Reports</h1>
-        <p className="text-gray-500">Download attendance and fees reports as CSV or PDF.</p>
+        <p className="text-gray-500">{isMembershipAdmin ? 'Download membership fees reports as CSV or PDF.' : 'Download attendance and fees reports as CSV or PDF.'}</p>
       </div>
 
       <div className="flex items-center gap-4 bg-white p-4 rounded-lg border shadow-sm">
@@ -325,8 +329,8 @@ export default function Reports() {
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="h-full">
+      <div className={`grid grid-cols-1 ${isMembershipAdmin ? 'md:grid-cols-1' : 'md:grid-cols-2'} gap-6`}>
+        {!isMembershipAdmin && <Card className="h-full">
           <CardHeader>
             <CardTitle>Attendance Report</CardTitle>
             <CardDescription>Download the report in CSV or PDF format</CardDescription>
@@ -350,11 +354,11 @@ export default function Reports() {
               </Button>
             </div>
           </CardContent>
-        </Card>
+        </Card>}
 
         <Card className="h-full">
           <CardHeader>
-            <CardTitle>Fees Report</CardTitle>
+            <CardTitle>{isMembershipAdmin ? 'Membership Fees Report' : 'Fees Report'}</CardTitle>
             <CardDescription>Download the report in CSV or PDF format</CardDescription>
           </CardHeader>
           <CardContent className="mt-auto">
@@ -380,7 +384,7 @@ export default function Reports() {
       </div>
 
       <div className="space-y-6">
-        <Card>
+        {!isMembershipAdmin && <Card>
           <CardHeader>
             <CardTitle>Attendance Report Table</CardTitle>
             <CardDescription>Preview of attendance report data for selected filter</CardDescription>
@@ -430,7 +434,7 @@ export default function Reports() {
               />
             </div>
           </CardContent>
-        </Card>
+        </Card>}
 
         <Card>
           <CardHeader>

@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { db, handleFirestoreError } from './firebase';
 import { useAuth } from './AuthContext';
-import { Student, Attendance, Fee } from '../types';
+import { Student, Attendance, Fee, Member } from '../types';
 
-export function useStudents() {
+export function useStudents(collectionName: 'students' | 'members' = 'students') {
   const { user } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,7 +17,7 @@ export function useStudents() {
     }
 
     setLoading(true);
-    const q = query(collection(db, 'students'), where('adminId', '==', user.uid));
+    const q = query(collection(db, collectionName), where('adminId', '==', user.adminId));
     const unsub = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Student))
@@ -26,16 +26,21 @@ export function useStudents() {
       setLoading(false);
     }, (error) => {
       try {
-        handleFirestoreError(error, 'list' as any, 'students');
+        handleFirestoreError(error, 'list' as any, collectionName);
       } catch (e) {
         console.error(e);
       }
       setLoading(false);
     });
     return () => unsub();
-  }, [user]);
+  }, [user, collectionName]);
 
   return { students, loading };
+}
+
+export function useMembers() {
+  const { students: members, loading } = useStudents('members');
+  return { members: members as Member[], loading };
 }
 
 export function useAttendance() {
@@ -51,7 +56,7 @@ export function useAttendance() {
     }
 
     setLoading(true);
-    const q = query(collection(db, 'attendance'), where('adminId', '==', user.uid));
+    const q = query(collection(db, 'attendance'), where('adminId', '==', user.adminId));
     const unsub = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Attendance))
@@ -85,7 +90,7 @@ export function useFees() {
     }
 
     setLoading(true);
-    const q = query(collection(db, 'fees'), where('adminId', '==', user.uid));
+    const q = query(collection(db, 'fees'), where('adminId', '==', user.adminId));
     const unsub = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Fee))

@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
-import { db, auth, handleFirestoreError } from '../lib/firebase';
+import { db, handleFirestoreError } from '../lib/firebase';
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { MessageSquareWarning, MessageSquareShare } from 'lucide-react';
@@ -14,14 +14,19 @@ import { sendWhatsAppMessage } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { SearchInput } from '../components/SearchInput';
 import { Pagination } from '../components/Pagination';
+import { useAuth } from '../lib/AuthContext';
 
 const DEFAULT_FEE_AMOUNT = 1000;
+const DEFAULT_FUND_AMOUNT = 100;
 const PAGE_SIZE = 10;
 
 export default function Fees() {
-  const { students, loading: studentsLoading } = useStudents();
+  const { user, isMembershipAdmin } = useAuth();
+  const { students, loading: studentsLoading } = useStudents(isMembershipAdmin ? 'members' : 'students');
+  const entityLabel = isMembershipAdmin ? 'Member' : 'Student';
+  const contactLabel = isMembershipAdmin ? 'Phone' : 'Parent Mobile';
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
-  const [defaultAmount, setDefaultAmount] = useState(String(DEFAULT_FEE_AMOUNT));
+  const [defaultAmount, setDefaultAmount] = useState(String(isMembershipAdmin ? DEFAULT_FUND_AMOUNT : DEFAULT_FEE_AMOUNT));
   const { fees, loading: feesLoading } = useFees();
   const [sendingIds, setSendingIds] = useState<Record<string, boolean>>({});
   const [paidDialogOpen, setPaidDialogOpen] = useState(false);
@@ -30,6 +35,10 @@ export default function Fees() {
   const [paymentAmountInput, setPaymentAmountInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setDefaultAmount(String(isMembershipAdmin ? DEFAULT_FUND_AMOUNT : DEFAULT_FEE_AMOUNT));
+  }, [isMembershipAdmin]);
 
   const monthFees = fees.filter(f => f.month === month);
   const feeMap = monthFees.reduce((acc, curr) => {
@@ -82,7 +91,7 @@ export default function Fees() {
         return {
           id: student.id!,
           name: student.name,
-          parentMobile: student.parentMobile,
+          parentMobile: isMembershipAdmin ? (student.phoneNumber || '') : student.parentMobile,
           paidAmount,
           balanceAmount,
           status: paidAmount <= 0 ? 'UNPAID' : 'PARTIAL PAID',
@@ -95,10 +104,10 @@ export default function Fees() {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return students;
     return students.filter((student) => {
-      const searchable = `${student.name} ${student.parentMobile} ${student.place}`.toLowerCase();
+      const searchable = `${student.name} ${isMembershipAdmin ? student.phoneNumber : student.parentMobile} ${student.place}`.toLowerCase();
       return searchable.includes(query);
     });
-  }, [students, searchTerm]);
+  }, [students, searchTerm, isMembershipAdmin]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -110,7 +119,7 @@ export default function Fees() {
   }, [filteredStudents, currentPage]);
 
   const handleMark = async (studentId: string, status: 'paid' | 'unpaid', paidAmount?: number) => {
-    if (!auth.currentUser) return;
+    if (!user) return;
     try {
       const existing = feeMap[studentId];
       const amount = getStudentAmount(studentId);
@@ -137,7 +146,7 @@ export default function Fees() {
       } else {
           const newDocRef = doc(collection(db, 'fees'));
           const payload: FeeType = {
-              adminId: auth.currentUser.uid,
+              adminId: user.adminId,
               studentId,
               month,
               amount,
@@ -156,12 +165,18 @@ export default function Fees() {
 
   const getPaidMessage = (studentName: string, monthStr: string) => {
     const formattedMonth = format(new Date(monthStr + '-01'), 'MMMM yyyy');
-    return `Dear Parent, fees of this month (${formattedMonth}) for your ward ${studentName} is received. Thank you.`;
+    if (isMembershipAdmin) {
+      return `Dear Member, your fund for ${formattedMonth} has been received. Thank you, ${studentName}.`;
+    }
+    return `Dear Parent, fees of this month (${formattedMonth}) for your ward ${studentName} has been received. Thank you.`;
   };
 
   const getWarningMessage = (studentName: string, monthStr: string) => {
     const formattedMonth = format(new Date(monthStr + '-01'), 'MMMM yyyy');
-    return `Dear Parent, this is a gentle reminder that the fees for ${formattedMonth} for your ward ${studentName} is pending. Kindly pay at the earliest.`;
+    if (isMembershipAdmin) {
+      return `Dear Member, this is a reminder that your fund for ${formattedMonth} is pending. Kindly pay at the earliest, ${studentName}.`;
+    }
+    return `Dear Parent, this is a reminder that fees for ${formattedMonth} for your ward ${studentName} is pending. Kindly pay at the earliest.`;
   };
 
   const getPartialPaymentMessage = (
@@ -172,7 +187,10 @@ export default function Fees() {
   ) => {
     const formattedMonth = format(new Date(monthStr + '-01'), 'MMMM yyyy');
     const balance = Math.max(expectedAmount - paidAmount, 0);
-    return `Dear Parent, for ${formattedMonth}, we received INR ${paidAmount.toFixed(2)} for ${studentName}. Monthly fee is INR ${expectedAmount.toFixed(2)}. Pending balance is INR ${balance.toFixed(2)}. Kindly clear the balance.`;
+    if (isMembershipAdmin) {
+      return `Dear Member, for ${formattedMonth}, we received INR ${paidAmount.toFixed(2)} from ${studentName}. Monthly fund is INR ${expectedAmount.toFixed(2)}. Pending balance is INR ${balance.toFixed(2)}. Kindly clear the balance.`;
+    }
+    return `Dear Parent, for ${formattedMonth}, we received INR ${paidAmount.toFixed(2)} for your ward ${studentName}. Monthly fee is INR ${expectedAmount.toFixed(2)}. Pending balance is INR ${balance.toFixed(2)}. Kindly clear the balance.`;
   };
 
   const handleSendFeeMessage = async (
@@ -191,12 +209,13 @@ export default function Fees() {
             ? getPartialPaymentMessage(studentName, month, meta.expectedAmount, meta.paidAmount)
             : getWarningMessage(studentName, month);
       await sendWhatsAppMessage(mobile, message);
+      const personLabel = isMembershipAdmin ? 'member' : 'parent';
       toast.success(
         messageType === 'receipt'
-          ? `Payment receipt sent to ${studentName}'s parent.`
+          ? `${isMembershipAdmin ? 'Fund' : 'Payment'} receipt sent to ${studentName}'s ${personLabel}.`
           : messageType === 'partial'
-            ? `Payment warning sent to ${studentName}'s parent.`
-            : `Overdue warning sent to ${studentName}'s parent.`,
+            ? `${isMembershipAdmin ? 'Fund' : 'Payment'} warning sent to ${studentName}'s ${personLabel}.`
+            : `${isMembershipAdmin ? 'Fund overdue' : 'Overdue payment'} warning sent to ${studentName}'s ${personLabel}.`,
       );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to send WhatsApp message.');
@@ -205,7 +224,6 @@ export default function Fees() {
     }
   };
 
-  const todayDate = new Date().getDate();
   const selectedStudent = students.find((student) => student.id === selectedStudentId);
 
   const openPaidAmountDialog = (studentId: string) => {
@@ -248,8 +266,8 @@ export default function Fees() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex justify-between items-center bg-white p-4 rounded-lg border shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold text-primary">Fees Record</h1>
-          <p className="text-gray-500 text-sm">Manage monthly fees, amount and balance</p>
+          <h1 className="text-2xl font-bold text-primary">{isMembershipAdmin ? 'Fund Record' : 'Fees Record'}</h1>
+          <p className="text-gray-500 text-sm">Manage monthly {isMembershipAdmin ? 'fund' : 'fees'}, amount and balance</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
           <label className="text-sm font-medium text-gray-700">Month:</label>
@@ -273,7 +291,7 @@ export default function Fees() {
             onClick={() => setDueDialogOpen(true)}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            Due Students
+            Due {entityLabel}s
           </Button>
         </div>
       </div>
@@ -296,14 +314,14 @@ export default function Fees() {
       <SearchInput
         value={searchTerm}
         onChange={setSearchTerm}
-        placeholder="Search by student name, place or parent mobile"
+        placeholder={`Search by ${entityLabel.toLowerCase()} name, place or ${contactLabel.toLowerCase()}`}
       />
 
       <div className="border rounded-md bg-white">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Student</TableHead>
+              <TableHead>{entityLabel}</TableHead>
               <TableHead>Paid</TableHead>
               <TableHead>Balance</TableHead>
               <TableHead className="w-1/3">Status</TableHead>
@@ -314,7 +332,7 @@ export default function Fees() {
             {studentsLoading || feesLoading ? (
               <TableRow><TableCell colSpan={5} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : filteredStudents.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center text-gray-500 py-8">No students found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-gray-500 py-8">No {entityLabel.toLowerCase()}s found.</TableCell></TableRow>
             ) : (
               paginatedStudents.map(student => {
                 const record = feeMap[student.id!];
@@ -325,9 +343,8 @@ export default function Fees() {
                 const balanceAmount = Math.max(feeAmount - paidAmount, 0);
                 const isPaidExact = record?.status === 'paid' && Math.abs(paidAmount - feeAmount) < 0.01;
                 const hasPaidMismatch = record?.status === 'paid' && !isPaidExact;
-                // if unpaid AND past 3rd of month => show warning
-                // we'll just check if status is unpaid or null, if date > 3 then warning available
-                const isOverdue = todayDate > 3 && (!record || record.status === 'unpaid');
+                // Show warning as soon as a row is marked unpaid (or no payment exists yet).
+                const isOverdue = !record || record.status === 'unpaid';
 
                 return (
                   <TableRow key={student.id}>
@@ -339,7 +356,7 @@ export default function Fees() {
                         </Avatar>
                         <div>
                           <p className="font-medium">{student.name}</p>
-                          <p className="text-xs text-gray-500">{student.parentMobile}</p>
+                          <p className="text-xs text-gray-500">{isMembershipAdmin ? student.phoneNumber : student.parentMobile}</p>
                         </div>
                       </div>
                     </TableCell>
@@ -372,7 +389,7 @@ export default function Fees() {
                           size="sm"
                           className="text-green-600 hover:text-green-700 hover:bg-green-50"
                           disabled={!!sendingIds[student.id!]}
-                          onClick={() => handleSendFeeMessage(student.id!, student.name, student.parentMobile, 'receipt')}
+                          onClick={() => handleSendFeeMessage(student.id!, student.name, isMembershipAdmin ? (student.phoneNumber || '') : student.parentMobile, 'receipt')}
                         >
                           <MessageSquareShare className="w-4 h-4 mr-2" />
                           {sendingIds[student.id!] ? 'Sending...' : 'Receipt'}
@@ -387,7 +404,7 @@ export default function Fees() {
                           onClick={() => handleSendFeeMessage(
                             student.id!,
                             student.name,
-                            student.parentMobile,
+                            isMembershipAdmin ? (student.phoneNumber || '') : student.parentMobile,
                             hasPaidMismatch ? 'partial' : 'overdue',
                             hasPaidMismatch ? { expectedAmount: feeAmount, paidAmount } : undefined,
                           )}
@@ -422,7 +439,7 @@ export default function Fees() {
           <div className="space-y-4 pt-2">
             {selectedStudent && (
               <div className="text-sm text-gray-600 space-y-1">
-                <p>Student: {selectedStudent.name}</p>
+                <p>{entityLabel}: {selectedStudent.name}</p>
                 <p>
                   Already paid:{' '}
                   <span className="font-medium text-green-700">
@@ -486,13 +503,13 @@ export default function Fees() {
       <Dialog open={dueDialogOpen} onOpenChange={setDueDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Due Students ({format(new Date(`${month}-01`), 'MMMM yyyy')})</DialogTitle>
+            <DialogTitle>Due {entityLabel}s ({format(new Date(`${month}-01`), 'MMMM yyyy')})</DialogTitle>
           </DialogHeader>
           <div className="max-h-[420px] overflow-auto border rounded-md">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Student</TableHead>
+                  <TableHead>{entityLabel}</TableHead>
                   <TableHead>Paid</TableHead>
                   <TableHead>Balance</TableHead>
                   <TableHead>Status</TableHead>
@@ -502,7 +519,7 @@ export default function Fees() {
                 {dueStudents.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-gray-500 py-8">
-                      No unpaid or partial-paid students for this month.
+                      No unpaid or partial-paid {entityLabel.toLowerCase()}s for this month.
                     </TableCell>
                   </TableRow>
                 ) : (

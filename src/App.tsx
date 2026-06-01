@@ -15,6 +15,7 @@ import Fees from './pages/Fees';
 import Reports from './pages/Reports';
 import { AnimatePresence, motion } from 'motion/react';
 import { Toaster } from 'sonner';
+import { useEffect } from 'react';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuth();
@@ -24,7 +25,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 function RouteTransition() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, isMembershipAdmin } = useAuth();
   return (
     <AnimatePresence mode="wait">
       <motion.div
@@ -40,7 +41,7 @@ function RouteTransition() {
           <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="students" element={<Students />} />
-            <Route path="attendance" element={<Attendance />} />
+            <Route path="attendance" element={isMembershipAdmin ? <Navigate to="/" replace /> : <Attendance />} />
             <Route path="fees" element={<Fees />} />
             <Route path="reports" element={<Reports />} />
           </Route>
@@ -51,6 +52,12 @@ function RouteTransition() {
 }
 
 function AppRoutes() {
+  const { isMembershipAdmin } = useAuth();
+
+  useEffect(() => {
+    document.body.classList.toggle('membership-theme', isMembershipAdmin);
+  }, [isMembershipAdmin]);
+
   return <RouteTransition />;
 }
 

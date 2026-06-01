@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
-import { db, auth, handleFirestoreError } from '../lib/firebase';
+import { db, handleFirestoreError } from '../lib/firebase';
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { MessageSquareWarning } from 'lucide-react';
@@ -13,10 +13,12 @@ import { sendWhatsAppMessage } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { SearchInput } from '../components/SearchInput';
 import { Pagination } from '../components/Pagination';
+import { useAuth } from '../lib/AuthContext';
 
 const PAGE_SIZE = 10;
 
 export default function Attendance() {
+  const { user } = useAuth();
   const { students, loading: studentsLoading } = useStudents();
   // Using hooks is good, but for attendance we probably just want to query for the current date's attendance to avoid pulling everything.
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -51,7 +53,7 @@ export default function Attendance() {
   }, [filteredStudents, currentPage]);
 
   const handleMark = async (studentId: string, status: 'present' | 'absent') => {
-    if (!auth.currentUser) return;
+    if (!user) return;
     try {
       const existing = attendanceMap[studentId];
       if (existing?.id) {
@@ -65,7 +67,7 @@ export default function Attendance() {
           // Add new record
           const newDocRef = doc(collection(db, 'attendance'));
           const payload: AttendanceType = {
-              adminId: auth.currentUser.uid,
+              adminId: user.adminId,
               studentId,
               date,
               status,
