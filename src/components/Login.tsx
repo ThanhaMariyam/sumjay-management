@@ -39,7 +39,7 @@ export default function Login() {
             alt="Sumjay logo"
             className="w-16 h-16 rounded-lg object-contain mx-auto mb-4 border border-primary/20 p-1 bg-white"
           />
-          <CardTitle className="text-2xl font-bold">Sumjay Football Camp</CardTitle>
+          <CardTitle className="text-2xl font-bold">SUMJAY PARAVANNA</CardTitle>
           <CardDescription>Sign in as Student Admin or Membership Admin.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
