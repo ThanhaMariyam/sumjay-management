@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "A student in the system.",
+      "type": "object",
+      "properties": {
+        "adminId": { "type": "string", "description": "The UID of the admin" },
+        "name": { "type": "string", "description": "Student's full name" },
+        "dob": { "type": "string", "description": "Date of Birth (YYYY-MM-DD)" },
+        "place": { "type": "string", "description": "Location or Address" },
+        "photoURL": { "type": "string", "description": "URL to the student's photo" },
+        "parentMobile": { "type": "string", "description": "Parent's WhatsApp number" },
+        "createdAt": { "type": "integer", "description": "Creation timestamp" },
+        "updatedAt": { "type": "integer", "description": "Last update timestamp" }
+      },
+      "required": ["adminId", "name", "dob", "place", "parentMobile", "createdAt"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Daily attendance record for a student.",
+      "type": "object",
+      "properties": {
+        "adminId": { "type": "string", "description": "The UID of the admin" },
+        "studentId": { "type": "string", "description": "The ID of the student" },
+        "date": { "type": "string", "description": "Date of attendance (YYYY-MM-DD)" },
+        "status": { "type": "string", "enum": ["present", "absent"], "description": "Attendance status" },
+        "createdAt": { "type": "integer", "description": "Creation timestamp" },
+        "updatedAt": { "type": "integer", "description": "Last update timestamp" }
+      },
+      "required": ["adminId", "studentId", "date", "status", "createdAt"]
+    },
+    "Fee": {
+      "title": "Fee",
+      "description": "Monthly fee record for a student.",
+      "type": "object",
+      "properties": {
+        "adminId": { "type": "string", "description": "The UID of the admin" },
+        "studentId": { "type": "string", "description": "The ID of the student" },
+        "month": { "type": "string", "description": "Month of the fee (YYYY-MM)" },
+        "status": { "type": "string", "enum": ["paid", "unpaid"], "description": "Fee status" },
+        "createdAt": { "type": "integer", "description": "Creation timestamp" },
+        "updatedAt": { "type": "integer", "description": "Last update timestamp" }
+      },
+      "required": ["adminId", "studentId", "month", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Global collection of students."
+    },
+    "/attendance/{recordId}": {
+      "schema": { "$ref": "#/entities/Attendance" },
+      "description": "Global collection of attendance records."
+    },
+    "/fees/{feeId}": {
+      "schema": { "$ref": "#/entities/Fee" },
+      "description": "Global collection of fee records."
+    }
+  }
+}

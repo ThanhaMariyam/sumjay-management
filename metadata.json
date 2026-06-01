@@ -1,0 +1,6 @@
+{
+  "name": "Student Manager",
+  "description": "Student management system with attendance, fee tracking, and WhatsApp notifications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
