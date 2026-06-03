@@ -23,7 +23,7 @@ export const googleProvider = new GoogleAuthProvider();
 
 export const loginWithGoogle = async () => {
   try {
-    await signInWithPopup(auth, googleProvider);
+    return await signInWithPopup(auth, googleProvider);
   } catch (error) {
     const code =
       typeof error === 'object' &&
@@ -41,6 +41,23 @@ export const loginWithGoogle = async () => {
 
     throw error;
   }
+};
+
+export const loginUserWithCredentials = async (email: string, password: string) => {
+  return signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+};
+
+export const signupUserWithCredentials = async (
+  email: string,
+  password: string,
+  displayName?: string,
+) => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const result = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+  if (displayName?.trim()) {
+    await updateProfile(result.user, { displayName: displayName.trim() });
+  }
+  return result;
 };
 
 const normalizeIdentifier = (identifier: string) => {

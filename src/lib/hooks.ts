@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { collection, query, onSnapshot, where } from 'firebase/firestore';
+import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError } from './firebase';
 import { useAuth } from './AuthContext';
 import { Student, Attendance, Fee, Member } from '../types';
 
 export function useStudents(collectionName: 'students' | 'members' = 'students') {
-  const { user } = useAuth();
+  const { user, isMembershipAdmin } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -17,12 +17,16 @@ export function useStudents(collectionName: 'students' | 'members' = 'students')
     }
 
     setLoading(true);
-    const q = query(collection(db, collectionName), where('adminId', '==', user.adminId));
-    const unsub = onSnapshot(q, (snapshot) => {
+    const applySnapshot = (snapshot: { docs: Array<{ id: string; data: () => unknown }> }) => {
       const data = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Student))
         .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
       setStudents(data);
+    };
+
+    const q = query(collection(db, collectionName), where('adminId', '==', user.adminId));
+    const unsubOwned = onSnapshot(q, (snapshot) => {
+      applySnapshot(snapshot);
       setLoading(false);
     }, (error) => {
       try {
@@ -32,8 +36,21 @@ export function useStudents(collectionName: 'students' | 'members' = 'students')
       }
       setLoading(false);
     });
-    return () => unsub();
-  }, [user, collectionName]);
+
+    let unsubAllMembers: (() => void) | undefined;
+    if (collectionName === 'members' && isMembershipAdmin) {
+      unsubAllMembers = onSnapshot(query(collection(db, collectionName)), (snapshot) => {
+        applySnapshot(snapshot);
+      }, (error) => {
+        console.warn('Unable to load all member profiles; showing admin-owned members only.', error);
+      });
+    }
+
+    return () => {
+      unsubOwned();
+      unsubAllMembers?.();
+    };
+  }, [user, collectionName, isMembershipAdmin]);
 
   return { students, loading };
 }
@@ -78,7 +95,7 @@ export function useAttendance() {
 }
 
 export function useFees() {
-  const { user } = useAuth();
+  const { user, isMembershipAdmin } = useAuth();
   const [fees, setFees] = useState<Fee[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -90,7 +107,98 @@ export function useFees() {
     }
 
     setLoading(true);
+    let ownedFees: Fee[] = [];
+    let allFees: Fee[] = [];
+
+    const publishFees = () => {
+      const feeById = new Map<string, Fee>();
+      [...ownedFees, ...allFees].forEach((fee) => {
+        if (fee.id) feeById.set(fee.id, fee);
+      });
+      setFees(
+        Array.from(feeById.values()).sort((a, b) => (b.month ?? '').localeCompare(a.month ?? '')),
+      );
+    };
+
     const q = query(collection(db, 'fees'), where('adminId', '==', user.adminId));
+    const unsubOwned = onSnapshot(q, (snapshot) => {
+      ownedFees = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fee));
+      publishFees();
+      setLoading(false);
+    }, (error) => {
+      try {
+        handleFirestoreError(error, 'list' as any, 'fees');
+      } catch (e) {
+        console.error(e);
+      }
+      setLoading(false);
+    });
+
+    let unsubAllFees: (() => void) | undefined;
+    if (isMembershipAdmin) {
+      unsubAllFees = onSnapshot(query(collection(db, 'fees')), (snapshot) => {
+        allFees = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fee));
+        publishFees();
+      }, (error) => {
+        console.warn('Unable to load all fund records; showing admin-owned records only.', error);
+      });
+    }
+
+    return () => {
+      unsubOwned();
+      unsubAllFees?.();
+    };
+  }, [user, isMembershipAdmin]);
+
+  return { fees, loading };
+}
+
+export function useCurrentMemberProfile() {
+  const { user, isMemberUser } = useAuth();
+  const [member, setMember] = useState<Member | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user || !isMemberUser) {
+      setMember(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const q = query(collection(db, 'members'), where('userId', '==', user.adminId), limit(1));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const docSnap = snapshot.docs[0];
+      setMember(docSnap ? ({ id: docSnap.id, ...docSnap.data() } as Member) : null);
+      setLoading(false);
+    }, (error) => {
+      try {
+        handleFirestoreError(error, 'list' as any, 'members');
+      } catch (e) {
+        console.error(e);
+      }
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [user, isMemberUser]);
+
+  return { member, loading };
+}
+
+export function useMemberFees(memberId?: string) {
+  const { user, isMemberUser } = useAuth();
+  const [fees, setFees] = useState<Fee[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user || !isMemberUser || !memberId) {
+      setFees([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const q = query(collection(db, 'fees'), where('studentId', '==', memberId));
     const unsub = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Fee))
@@ -106,7 +214,7 @@ export function useFees() {
       setLoading(false);
     });
     return () => unsub();
-  }, [user]);
+  }, [user, isMemberUser, memberId]);
 
   return { fees, loading };
 }

@@ -97,6 +97,18 @@ body.membership-theme {
     --sidebar-accent-foreground: oklch(0.42 0.08 234);
 }
 
+.auth-sky-theme {
+    --primary: oklch(0.66 0.16 234);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.95 0.03 230);
+    --secondary-foreground: oklch(0.43 0.08 234);
+    --muted: oklch(0.97 0.01 230);
+    --muted-foreground: oklch(0.48 0.03 234);
+    --accent: oklch(0.93 0.04 230);
+    --accent-foreground: oklch(0.42 0.08 234);
+    --ring: oklch(0.72 0.12 234);
+}
+
 .dark {
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);

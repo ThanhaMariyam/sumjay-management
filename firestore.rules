@@ -11,6 +11,9 @@ service cloud.firestore {
     // Primitive Helpers
     function isSignedIn() { return request.auth != null; }
     function isAdmin(adminId) { return isSignedIn() && request.auth.uid == adminId; }
+    function isMembershipAdmin() {
+      return isSignedIn() && request.auth.token.email == 'membership_admin@sumjay.club';
+    }
     function isValidId(id) { return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
@@ -31,13 +34,15 @@ service cloud.firestore {
     // Member Entity Validation
     function isValidMember(data) {
       return data.keys().hasAll(['adminId', 'name', 'dob', 'place', 'phoneNumber', 'bloodGroup', 'createdAt'])
-        && data.adminId is string && data.adminId == request.auth.uid
+        && data.adminId is string && data.adminId.size() > 0 && data.adminId.size() <= 128
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.dob is string && data.dob.size() == 10 && data.dob.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && data.place is string && data.place.size() <= 200
         && data.phoneNumber is string && data.phoneNumber.size() <= 20
         && data.bloodGroup is string && data.bloodGroup.size() > 0 && data.bloodGroup.size() <= 10
         && data.createdAt is number
+        && (data.keys().hasAll(['userId']) ? (data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128) : true)
+        && (data.keys().hasAll(['email']) ? (data.email is string && data.email.size() <= 200) : true)
         && (data.keys().hasAll(['photoURL']) ? (data.photoURL is string && data.photoURL.size() <= 500) : true)
         && (data.keys().hasAll(['updatedAt']) ? data.updatedAt is number : true);
     }
@@ -56,7 +61,7 @@ service cloud.firestore {
     // Fee Entity Validation
     function isValidFee(data) {
       return data.keys().hasAll(['adminId', 'studentId', 'month', 'status', 'createdAt'])
-        && data.adminId is string && data.adminId == request.auth.uid
+        && data.adminId is string && data.adminId.size() > 0 && data.adminId.size() <= 128
         && data.studentId is string && data.studentId.size() > 0 && data.studentId.size() <= 128
         && data.month is string && data.month.size() == 7 && data.month.matches('^[0-9]{4}-[0-9]{2}$')
         && data.status is string && (data.status == 'paid' || data.status == 'unpaid')
@@ -80,15 +85,38 @@ service cloud.firestore {
 
     // /members/{memberId}
     match /members/{memberId} {
-      allow get: if isValidId(memberId) && isAdmin(existing().adminId);
-      allow list: if isSignedIn() && existing().adminId == request.auth.uid;
-      allow create: if isValidId(memberId) && isValidMember(incoming());
+      allow get: if isValidId(memberId)
+                 && (isSignedIn()
+                     || isMembershipAdmin()
+                     || isAdmin(existing().adminId)
+                     || (existing().keys().hasAll(['userId']) && existing().userId == request.auth.uid));
+      allow list: if isSignedIn()
+                  && (isMembershipAdmin()
+                      || existing().adminId == request.auth.uid
+                      || (
+                        request.auth.token.email is string
+                        && existing().keys().hasAll(['email'])
+                        && existing().email == request.auth.token.email
+                      )
+                      || (existing().keys().hasAll(['userId']) && existing().userId == request.auth.uid));
+      allow create: if isValidId(memberId)
+                    && isValidMember(incoming())
+                    && incoming().adminId == request.auth.uid;
       allow update: if isValidId(memberId)
-                    && isAdmin(existing().adminId)
+                    && (isAdmin(existing().adminId)
+                        || (existing().keys().hasAll(['userId']) && existing().userId == request.auth.uid)
+                        || (
+                          !existing().keys().hasAll(['userId'])
+                          && request.auth.token.email is string
+                          && existing().keys().hasAll(['email'])
+                          && existing().email == request.auth.token.email
+                          && incoming().userId == request.auth.uid
+                        ))
                     && isValidMember(incoming())
                     && incoming().adminId == existing().adminId
-                    && incoming().createdAt == existing().createdAt;
-      allow delete: if isValidId(memberId) && isAdmin(existing().adminId);
+                    && incoming().createdAt == existing().createdAt
+                    && (!existing().keys().hasAll(['userId']) || incoming().userId == existing().userId);
+      allow delete: if isValidId(memberId) && (isMembershipAdmin() || isAdmin(existing().adminId));
     }
 
     // /attendance/{recordId}
@@ -110,21 +138,35 @@ service cloud.firestore {
 
     // /fees/{feeId}
     match /fees/{feeId} {
-      allow get: if isValidId(feeId) && isAdmin(existing().adminId);
-      allow list: if isSignedIn() && existing().adminId == request.auth.uid;
+      allow get: if isValidId(feeId)
+                 && (isAdmin(existing().adminId)
+                     || isMembershipAdmin()
+                     || (
+                       exists(/databases/$(database)/documents/members/$(existing().studentId))
+                       && get(/databases/$(database)/documents/members/$(existing().studentId)).data.userId == request.auth.uid
+                     ));
+      allow list: if isSignedIn()
+                  && (existing().adminId == request.auth.uid
+                      || isMembershipAdmin()
+                      || (
+                        exists(/databases/$(database)/documents/members/$(existing().studentId))
+                        && get(/databases/$(database)/documents/members/$(existing().studentId)).data.userId == request.auth.uid
+                      ));
       allow create: if isValidId(feeId) 
                     && isValidFee(incoming()) 
+                    && (incoming().adminId == request.auth.uid || isMembershipAdmin())
                     && (
                       get(/databases/$(database)/documents/students/$(incoming().studentId)).data.adminId == request.auth.uid
                       || get(/databases/$(database)/documents/members/$(incoming().studentId)).data.adminId == request.auth.uid
+                      || (isMembershipAdmin() && exists(/databases/$(database)/documents/members/$(incoming().studentId)))
                     );
       allow update: if isValidId(feeId)
-                    && isAdmin(existing().adminId)
+                    && (isAdmin(existing().adminId) || isMembershipAdmin())
                     && isValidFee(incoming())
                     && incoming().adminId == existing().adminId
                     && incoming().studentId == existing().studentId
                     && incoming().createdAt == existing().createdAt;
-      allow delete: if isValidId(feeId) && isAdmin(existing().adminId);
+      allow delete: if isValidId(feeId) && (isAdmin(existing().adminId) || isMembershipAdmin());
     }
   }
 }

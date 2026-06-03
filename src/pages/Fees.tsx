@@ -119,7 +119,7 @@ export default function Fees() {
   }, [filteredStudents, currentPage]);
 
   const handleMark = async (studentId: string, status: 'paid' | 'unpaid', paidAmount?: number) => {
-    if (!user) return;
+    if (!user) return false;
     try {
       const existing = feeMap[studentId];
       const amount = getStudentAmount(studentId);
@@ -158,8 +158,15 @@ export default function Fees() {
           };
           await setDoc(newDocRef, payload);
       }
+      return true;
     } catch (error) {
-        handleFirestoreError(error, 'write' as any, 'fees');
+        toast.error(`Failed to update ${isMembershipAdmin ? 'fund' : 'fee'} record. Please check Firestore rules and try again.`);
+        try {
+          handleFirestoreError(error, 'write' as any, 'fees');
+        } catch (loggedError) {
+          console.error(loggedError);
+        }
+        return false;
     }
   };
 
@@ -256,7 +263,8 @@ export default function Fees() {
       return;
     }
     const nextPaidAmount = Math.min(currentPaidAmount + addAmount, expectedAmount);
-    await handleMark(selectedStudentId, 'paid', nextPaidAmount);
+    const ok = await handleMark(selectedStudentId, 'paid', nextPaidAmount);
+    if (!ok) return;
     setPaidDialogOpen(false);
     setSelectedStudentId(null);
     setPaymentAmountInput('');

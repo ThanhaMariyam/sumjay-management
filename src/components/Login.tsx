@@ -6,6 +6,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import sumjayLogo from '../assets/sumjay-logo.png';
 import { useAuth } from '../lib/AuthContext';
+import { Link } from 'react-router-dom';
 
 export default function Login() {
   const { login } = useAuth();
@@ -31,7 +32,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+    <div className="auth-sky-theme min-h-screen bg-sky-50 flex flex-col items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <img
@@ -74,6 +75,9 @@ export default function Login() {
               Sign In
             </Button>
           </form>
+          <div className="text-center text-sm text-gray-600">
+            Member user? <Link className="font-medium text-primary hover:underline" to="/user/login">Login or signup</Link>
+          </div>
         </CardContent>
       </Card>
     </div>

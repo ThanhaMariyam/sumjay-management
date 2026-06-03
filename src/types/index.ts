@@ -1,8 +1,11 @@
 export type AdminRole = 'student' | 'membership';
+export type UserRole = AdminRole | 'member';
 
 export interface Student {
   id?: string;
   adminId: string;
+  userId?: string;
+  email?: string;
   name: string;
   dob: string;
   place: string;
@@ -17,6 +20,8 @@ export interface Student {
 export interface Member {
   id?: string;
   adminId: string;
+  userId?: string;
+  email?: string;
   name: string;
   dob: string;
   place: string;

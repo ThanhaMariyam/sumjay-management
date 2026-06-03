@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { db, handleFirestoreError } from '../lib/firebase';
-import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { Student } from '../types';
 import { uploadStudentPhotoToCloudinary } from '../lib/cloudinary';
@@ -39,6 +39,7 @@ export default function Students() {
     parentMobile: '',
     phoneNumber: '',
     bloodGroup: '',
+    email: '',
     photoURL: ''
   });
 
@@ -49,7 +50,7 @@ export default function Students() {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return students;
     return students.filter((student) => {
-      const searchable = `${student.name} ${student.dob} ${student.place} ${contactValue(student)} ${student.bloodGroup || ''}`.toLowerCase();
+      const searchable = `${student.name} ${student.dob} ${student.place} ${contactValue(student)} ${student.bloodGroup || ''} ${student.email || ''}`.toLowerCase();
       return searchable.includes(query);
     });
   }, [students, searchTerm, isMembershipAdmin]);
@@ -93,9 +94,14 @@ export default function Students() {
         dob: formData.dob,
         place: formData.place,
         photoURL,
-        adminId: user.adminId,
+        adminId: editingStudent?.adminId || user.adminId,
         ...(isMembershipAdmin
-          ? { phoneNumber: formData.phoneNumber, bloodGroup: formData.bloodGroup }
+          ? {
+              phoneNumber: formData.phoneNumber,
+              bloodGroup: formData.bloodGroup,
+              email: formData.email.trim().toLowerCase(),
+              ...(editingStudent?.userId ? { userId: editingStudent.userId } : {}),
+            }
           : { parentMobile: formData.parentMobile }),
       };
 
@@ -105,16 +111,24 @@ export default function Students() {
           updatedAt: Date.now(),
         });
       } else {
-        await addDoc(collection(db, collectionName), {
-          ...payload,
-          createdAt: Date.now(),
-        });
+        if (isMembershipAdmin) {
+          const newDocRef = doc(collection(db, collectionName));
+          await setDoc(newDocRef, {
+            ...payload,
+            createdAt: Date.now(),
+          });
+        } else {
+          await addDoc(collection(db, collectionName), {
+            ...payload,
+            createdAt: Date.now(),
+          });
+        }
       }
 
       setIsOpen(false);
       setEditingStudent(null);
       setPhotoFile(null);
-      setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', photoURL: '' });
+      setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', email: '', photoURL: '' });
     } catch (error) {
       setSaveError(`Failed to save ${itemLabel.toLowerCase()}. Please try again.`);
       handleFirestoreError(error, 'write' as any, collectionName);
@@ -141,6 +155,7 @@ export default function Students() {
       parentMobile: student.parentMobile || '',
       phoneNumber: student.phoneNumber || '',
       bloodGroup: student.bloodGroup || '',
+      email: student.email || '',
       photoURL: student.photoURL || ''
     });
     setPhotoFile(null);
@@ -162,7 +177,7 @@ export default function Students() {
               setEditingStudent(null);
               setPhotoFile(null);
               setSaveError('');
-              setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', photoURL: '' });
+              setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', email: '', photoURL: '' });
             }}>Add {itemLabel}</Button>
           </DialogTrigger>
           <DialogContent>
@@ -192,6 +207,12 @@ export default function Students() {
                   onChange={e => setFormData({ ...formData, [isMembershipAdmin ? 'phoneNumber' : 'parentMobile']: e.target.value })}
                 />
               </div>
+              {isMembershipAdmin && (
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input type="email" required placeholder="member@example.com" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                </div>
+              )}
               {isMembershipAdmin && (
                 <div className="space-y-2">
                   <Label>Blood Group</Label>
@@ -229,6 +250,7 @@ export default function Students() {
               <div className="space-y-2 rounded-md border bg-gray-50 p-4 text-sm">
                 <p><span className="font-medium text-gray-700">Date of Birth:</span> {selectedStudent.dob}</p>
                 <p><span className="font-medium text-gray-700">Place:</span> {selectedStudent.place}</p>
+                {isMembershipAdmin && <p><span className="font-medium text-gray-700">Email:</span> {selectedStudent.email || '-'}</p>}
                 <p><span className="font-medium text-gray-700">{isMembershipAdmin ? 'Phone Number' : 'Parent WhatsApp'}:</span> {contactValue(selectedStudent)}</p>
                 <a
                   href={phoneHref(contactValue(selectedStudent))}
@@ -277,7 +299,10 @@ export default function Students() {
                         <AvatarImage src={student.photoURL} />
                         <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
                       </Avatar>
-                      <span className="font-medium">{student.name}</span>
+                      <div>
+                        <p className="font-medium">{student.name}</p>
+                        {isMembershipAdmin && <p className="text-xs text-gray-500">{student.email || 'No email'}</p>}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell>{student.dob}</TableCell>
