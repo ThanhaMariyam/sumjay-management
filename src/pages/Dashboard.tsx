@@ -85,7 +85,7 @@ export default function Dashboard() {
   }, {} as Record<string, typeof monthFees[number]>);
   const isAmountEqual = (a: number, b: number) => Math.abs(a - b) < 0.01;
   const isFullPayment = (paidAmount: number, expectedAmount: number) => (
-    isMembershipAdmin && memberRoleFilter === 'abroad'
+    isMembershipAdmin
       ? paidAmount + 0.009 >= expectedAmount
       : isAmountEqual(paidAmount, expectedAmount)
   );

@@ -92,6 +92,7 @@ service cloud.firestore {
                      || (existing().keys().hasAll(['userId']) && existing().userId == request.auth.uid));
       allow list: if isSignedIn()
                   && (isMembershipAdmin()
+                      || isSignedIn()
                       || existing().adminId == request.auth.uid
                       || (
                         request.auth.token.email is string
@@ -146,7 +147,8 @@ service cloud.firestore {
                        && get(/databases/$(database)/documents/members/$(existing().studentId)).data.userId == request.auth.uid
                      ));
       allow list: if isSignedIn()
-                  && (existing().adminId == request.auth.uid
+                  && (isSignedIn()
+                      || existing().adminId == request.auth.uid
                       || isMembershipAdmin()
                       || (
                         exists(/databases/$(database)/documents/members/$(existing().studentId))

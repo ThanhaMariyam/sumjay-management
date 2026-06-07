@@ -194,7 +194,7 @@ export default function Reports() {
         : 0;
       const balanceAmount = Math.max(expectedAmount - paidAmount, 0);
       const isFullPaid = normalizedStatus === 'paid' && (
-        isMembershipAdmin && memberRoleFilter === 'abroad'
+        isMembershipAdmin
           ? paidAmount + 0.009 >= expectedAmount
           : Math.abs(paidAmount - expectedAmount) < 0.01
       );

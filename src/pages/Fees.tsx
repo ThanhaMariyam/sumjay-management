@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { db, handleFirestoreError } from '../lib/firebase';
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
-import { MessageSquareWarning, MessageSquareShare } from 'lucide-react';
+import { Crown, Flame, MessageSquareWarning, MessageSquareShare } from 'lucide-react';
 import { Fee as FeeType, MemberRole } from '../types';
 import { sendWhatsAppMessage } from '../lib/whatsapp';
 import { toast } from 'sonner';
@@ -69,6 +69,12 @@ export default function Fees() {
     return parseAmount(defaultAmount);
   };
 
+  const getPaidAmount = (studentId: string) => {
+    const record = feeMap[studentId];
+    const expectedAmount = getStudentAmount(studentId);
+    return record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? expectedAmount) : 0;
+  };
+
   const formatAmount = (value: number) =>
     new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -121,15 +127,40 @@ export default function Fees() {
       .filter((row) => row.balanceAmount > 0);
   }, [roleFilteredStudents, feeMap, defaultAmount, isMembershipAdmin]);
 
+  const topExtraPaidMembers = useMemo(() => {
+    if (!isMembershipAdmin) return new Map<string, number>();
+
+    const rankedMembers = roleFilteredStudents
+      .map((student) => ({
+        id: student.id!,
+        paidAmount: getPaidAmount(student.id!),
+        minimumAmount: getStudentAmount(student.id!),
+      }))
+      .filter((row) => row.paidAmount > row.minimumAmount + 0.009)
+      .sort((a, b) => b.paidAmount - a.paidAmount)
+      .slice(0, 3);
+
+    return rankedMembers.reduce((acc, row, index) => {
+      acc.set(row.id, index + 1);
+      return acc;
+    }, new Map<string, number>());
+  }, [isMembershipAdmin, roleFilteredStudents, feeMap, defaultAmount]);
+
   const filteredStudents = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return roleFilteredStudents;
-    return roleFilteredStudents.filter((student) => {
+    const visibleStudents = query
+      ? roleFilteredStudents.filter((student) => {
       const roleLabel = student.memberRole === 'abroad' ? 'abroad' : 'local';
       const searchable = `${student.name} ${isMembershipAdmin ? student.phoneNumber : student.parentMobile} ${student.place} ${roleLabel}`.toLowerCase();
       return searchable.includes(query);
-    });
-  }, [roleFilteredStudents, searchTerm, isMembershipAdmin]);
+    })
+      : roleFilteredStudents;
+
+    if (!isMembershipAdmin) return visibleStudents;
+    return visibleStudents
+      .slice()
+      .sort((a, b) => getPaidAmount(b.id!) - getPaidAmount(a.id!));
+  }, [roleFilteredStudents, searchTerm, isMembershipAdmin, isAnnualFund, feeMap, defaultAmount]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -280,11 +311,11 @@ export default function Fees() {
       ? (record.paidAmount ?? record.amount ?? expectedAmount)
       : 0;
     const balanceAmount = Math.max(expectedAmount - currentPaidAmount, 0);
-    if (!isAnnualFund && addAmount > balanceAmount + 0.009) {
+    if (!isMembershipAdmin && addAmount > balanceAmount + 0.009) {
       toast.error(`Entered amount is greater than balance ${formatAmount(balanceAmount)}.`);
       return;
     }
-    const nextPaidAmount = isAnnualFund ? currentPaidAmount + addAmount : Math.min(currentPaidAmount + addAmount, expectedAmount);
+    const nextPaidAmount = isMembershipAdmin ? currentPaidAmount + addAmount : Math.min(currentPaidAmount + addAmount, expectedAmount);
     const ok = await handleMark(selectedStudentId, 'paid', nextPaidAmount);
     if (!ok) return;
     setPaidDialogOpen(false);
@@ -397,7 +428,7 @@ export default function Fees() {
                   ? (record.paidAmount ?? record.amount ?? feeAmount)
                   : 0;
                 const balanceAmount = Math.max(feeAmount - paidAmount, 0);
-                const isPaidExact = record?.status === 'paid' && (isAnnualFund ? paidAmount + 0.009 >= feeAmount : Math.abs(paidAmount - feeAmount) < 0.01);
+                const isPaidExact = record?.status === 'paid' && (isMembershipAdmin ? paidAmount + 0.009 >= feeAmount : Math.abs(paidAmount - feeAmount) < 0.01);
                 const hasPaidMismatch = record?.status === 'paid' && !isPaidExact;
                 // Show warning as soon as a row is marked unpaid (or no payment exists yet).
                 const isOverdue = !record || record.status === 'unpaid';
@@ -411,12 +442,35 @@ export default function Fees() {
                           <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-medium">{student.name}</p>
+                          <p className="flex items-center gap-1.5 font-medium">
+                            <span>{student.name}</span>
+                            {isMembershipAdmin && topExtraPaidMembers.has(student.id!) && (
+                              <Crown
+                                className="h-4 w-4"
+                                style={{
+                                  color:
+                                    topExtraPaidMembers.get(student.id!) === 1
+                                      ? '#d97706'
+                                      : topExtraPaidMembers.get(student.id!) === 2
+                                        ? '#64748b'
+                                        : '#b45309',
+                                }}
+                                aria-label={`Rank ${topExtraPaidMembers.get(student.id!)} contributor`}
+                              />
+                            )}
+                          </p>
                           <p className="text-xs text-gray-500">{isMembershipAdmin ? student.phoneNumber : student.parentMobile}</p>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-green-700 font-medium">{formatAmount(paidAmount)}</TableCell>
+                    <TableCell className="text-green-700 font-medium">
+                      <span className="inline-flex items-center gap-1.5">
+                        {formatAmount(paidAmount)}
+                        {isMembershipAdmin && paidAmount > feeAmount + 0.009 && (
+                          <Flame className="h-4 w-4 fill-orange-500 text-orange-500" aria-label="Paid above minimum" />
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-orange-700 font-medium">{formatAmount(balanceAmount)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

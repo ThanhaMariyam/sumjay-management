@@ -5,7 +5,7 @@ import { useAuth } from './AuthContext';
 import { Student, Attendance, Fee, Member } from '../types';
 
 export function useStudents(collectionName: 'students' | 'members' = 'students') {
-  const { user, isMembershipAdmin } = useAuth();
+  const { user, isMembershipAdmin, isMemberUser } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,7 +38,7 @@ export function useStudents(collectionName: 'students' | 'members' = 'students')
     });
 
     let unsubAllMembers: (() => void) | undefined;
-    if (collectionName === 'members' && isMembershipAdmin) {
+    if (collectionName === 'members' && (isMembershipAdmin || isMemberUser)) {
       unsubAllMembers = onSnapshot(query(collection(db, collectionName)), (snapshot) => {
         applySnapshot(snapshot);
       }, (error) => {
@@ -50,7 +50,7 @@ export function useStudents(collectionName: 'students' | 'members' = 'students')
       unsubOwned();
       unsubAllMembers?.();
     };
-  }, [user, collectionName, isMembershipAdmin]);
+  }, [user, collectionName, isMembershipAdmin, isMemberUser]);
 
   return { students, loading };
 }
@@ -95,7 +95,7 @@ export function useAttendance() {
 }
 
 export function useFees() {
-  const { user, isMembershipAdmin } = useAuth();
+  const { user, isMembershipAdmin, isMemberUser } = useAuth();
   const [fees, setFees] = useState<Fee[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -135,7 +135,7 @@ export function useFees() {
     });
 
     let unsubAllFees: (() => void) | undefined;
-    if (isMembershipAdmin) {
+    if (isMembershipAdmin || isMemberUser) {
       unsubAllFees = onSnapshot(query(collection(db, 'fees')), (snapshot) => {
         allFees = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fee));
         publishFees();
@@ -148,7 +148,7 @@ export function useFees() {
       unsubOwned();
       unsubAllFees?.();
     };
-  }, [user, isMembershipAdmin]);
+  }, [user, isMembershipAdmin, isMemberUser]);
 
   return { fees, loading };
 }
