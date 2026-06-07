@@ -22,12 +22,14 @@ import {
   startOfYear,
 } from 'date-fns';
 import { downloadCsvFile, downloadPdfTable } from '../lib/reportExport';
-import { Fee } from '../types';
+import { Fee, MemberRole } from '../types';
 import { useAuth } from '../lib/AuthContext';
+import { useMemberRoleFilter } from '../lib/memberRoleFilter';
 
 type FilterType = 'day' | 'week' | 'month' | 'year';
 const DEFAULT_FEE_AMOUNT = 1000;
 const DEFAULT_FUND_AMOUNT = 100;
+const DEFAULT_ANNUAL_FUND_AMOUNT = DEFAULT_FUND_AMOUNT * 12;
 const PAGE_SIZE = 10;
 
 function getDateRange(filterType: FilterType) {
@@ -62,17 +64,27 @@ function getFeeRecordDate(fee: Fee) {
 
 export default function Reports() {
   const { isMembershipAdmin } = useAuth();
-  const defaultAmount = isMembershipAdmin ? DEFAULT_FUND_AMOUNT : DEFAULT_FEE_AMOUNT;
   const { students } = useStudents(isMembershipAdmin ? 'members' : 'students');
   const { attendance } = useAttendance();
   const { fees } = useFees();
   const [filterType, setFilterType] = useState<FilterType>('month');
   const [attendanceSearchTerm, setAttendanceSearchTerm] = useState('');
   const [feesSearchTerm, setFeesSearchTerm] = useState('');
+  const { memberRoleFilter, setMemberRoleFilter } = useMemberRoleFilter();
   const [attendancePage, setAttendancePage] = useState(1);
   const [feesPage, setFeesPage] = useState(1);
+  const defaultAmount = isMembershipAdmin
+    ? (memberRoleFilter === 'abroad' ? DEFAULT_ANNUAL_FUND_AMOUNT : DEFAULT_FUND_AMOUNT)
+    : DEFAULT_FEE_AMOUNT;
 
-  const studentMap = students.reduce((acc, s) => {
+  const reportStudents = useMemo(() => {
+    if (!isMembershipAdmin) return students;
+    return students.filter((student) => (student.memberRole === 'abroad' ? 'abroad' : 'local') === memberRoleFilter);
+  }, [students, isMembershipAdmin, memberRoleFilter]);
+
+  const reportStudentIds = useMemo(() => new Set(reportStudents.map((student) => student.id).filter(Boolean) as string[]), [reportStudents]);
+
+  const studentMap = reportStudents.reduce((acc, s) => {
     acc[s.id!] = s;
     return acc;
   }, {} as Record<string, any>);
@@ -95,7 +107,7 @@ export default function Reports() {
       return acc;
     }, {} as Record<string, Record<string, string>>);
 
-    const relevantStudentIds = students.map((student) => student.id).filter(Boolean) as string[];
+    const relevantStudentIds = reportStudents.map((student) => student.id).filter(Boolean) as string[];
 
     if (filterType === 'day') {
       const dayHeader = format(start, 'dd MMM yyyy');
@@ -150,7 +162,7 @@ export default function Reports() {
       }
       return row;
     });
-  }, [filteredAttendance, studentMap, start, end, filterType, students]);
+  }, [filteredAttendance, studentMap, start, end, filterType, reportStudents]);
 
   const attendancePdfRows = useMemo(() => {
     return filteredAttendance
@@ -165,11 +177,12 @@ export default function Reports() {
 
   const filteredFees = useMemo(() => {
     return fees.filter((fee) => {
+      if (!reportStudentIds.has(fee.studentId)) return false;
       const date = getFeeRecordDate(fee);
       if (!date) return false;
       return isInRange(date, start, end);
     });
-  }, [fees, start, end]);
+  }, [fees, start, end, reportStudentIds]);
 
   const feesRows = useMemo(() => {
     return filteredFees.map((fee) => {
@@ -180,7 +193,11 @@ export default function Reports() {
         ? (typeof fee.paidAmount === 'number' && fee.paidAmount >= 0 ? fee.paidAmount : expectedAmount)
         : 0;
       const balanceAmount = Math.max(expectedAmount - paidAmount, 0);
-      const isFullPaid = normalizedStatus === 'paid' && Math.abs(paidAmount - expectedAmount) < 0.01;
+      const isFullPaid = normalizedStatus === 'paid' && (
+        isMembershipAdmin && memberRoleFilter === 'abroad'
+          ? paidAmount + 0.009 >= expectedAmount
+          : Math.abs(paidAmount - expectedAmount) < 0.01
+      );
       const displayStatus = normalizedStatus === 'paid'
         ? (isFullPaid ? 'PAID' : 'PARTIAL PAID')
         : 'UNPAID';
@@ -249,11 +266,11 @@ export default function Reports() {
 
   useEffect(() => {
     setAttendancePage(1);
-  }, [attendanceSearchTerm, attendanceRows.length, filterType]);
+  }, [attendanceSearchTerm, attendanceRows.length, filterType, memberRoleFilter]);
 
   useEffect(() => {
     setFeesPage(1);
-  }, [feesSearchTerm, feesRows.length, filterType]);
+  }, [feesSearchTerm, feesRows.length, filterType, memberRoleFilter]);
 
   const paginatedAttendanceRows = useMemo(() => {
     const startIndex = (attendancePage - 1) * PAGE_SIZE;
@@ -314,7 +331,7 @@ export default function Reports() {
         <p className="text-gray-500">{isMembershipAdmin ? 'Download membership fees reports as CSV or PDF.' : 'Download attendance and fees reports as CSV or PDF.'}</p>
       </div>
 
-      <div className="flex items-center gap-4 bg-white p-4 rounded-lg border shadow-sm">
+      <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-lg border shadow-sm">
         <label className="text-sm font-medium text-gray-700">Filter By:</label>
         <Select value={filterType} onValueChange={(value) => setFilterType(value as FilterType)}>
           <SelectTrigger className="w-[180px]">
@@ -327,6 +344,20 @@ export default function Reports() {
             <SelectItem value="year">This Year</SelectItem>
           </SelectContent>
         </Select>
+        {isMembershipAdmin && (
+          <>
+            <label className="text-sm font-medium text-gray-700">Role:</label>
+            <Select value={memberRoleFilter} onValueChange={(value) => setMemberRoleFilter(value as MemberRole)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">Local</SelectItem>
+                <SelectItem value="abroad">Abroad</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
+        )}
       </div>
 
       <div className={`grid grid-cols-1 ${isMembershipAdmin ? 'md:grid-cols-1' : 'md:grid-cols-2'} gap-6`}>

@@ -8,16 +8,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { useCurrentMemberProfile, useMemberFees } from '../lib/hooks';
 
 const DEFAULT_FUND_AMOUNT = 100;
+const DEFAULT_ANNUAL_FUND_AMOUNT = DEFAULT_FUND_AMOUNT * 12;
 
 const formatAmount = (value: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value);
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
 export default function UserDashboard() {
   const { member, loading: profileLoading } = useCurrentMemberProfile();
   const { fees, loading: feesLoading } = useMemberFees(member?.id);
+  const isAbroadMember = member?.memberRole === 'abroad';
   const currentMonth = format(new Date(), 'yyyy-MM');
-  const currentFee = fees.find((fee) => fee.month === currentMonth);
-  const expectedAmount = currentFee?.amount ?? DEFAULT_FUND_AMOUNT;
+  const currentYear = format(new Date(), 'yyyy');
+  const currentPeriodKey = isAbroadMember ? `${currentYear}-01` : currentMonth;
+  const currentPeriodLabel = isAbroadMember ? currentYear : format(new Date(`${currentMonth}-01`), 'MMMM yyyy');
+  const currentFee = fees.find((fee) => fee.month === currentPeriodKey);
+  const expectedAmount = currentFee?.amount ?? (isAbroadMember ? DEFAULT_ANNUAL_FUND_AMOUNT : DEFAULT_FUND_AMOUNT);
   const paidAmount = currentFee?.status === 'paid'
     ? (currentFee.paidAmount ?? currentFee.amount ?? expectedAmount)
     : 0;
@@ -75,12 +80,12 @@ export default function UserDashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Paid This Month</CardTitle>
+            <CardTitle className="text-sm font-medium">{isAbroadMember ? 'Paid This Year' : 'Paid This Month'}</CardTitle>
             <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-700">{feesLoading ? '...' : formatAmount(paidAmount)}</div>
-            <p className="text-xs text-muted-foreground">{format(new Date(`${currentMonth}-01`), 'MMMM yyyy')}</p>
+            <p className="text-xs text-muted-foreground">{currentPeriodLabel}</p>
           </CardContent>
         </Card>
 
@@ -91,7 +96,7 @@ export default function UserDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-700">{feesLoading ? '...' : formatAmount(balanceAmount)}</div>
-            <p className="text-xs text-muted-foreground">Monthly fund status</p>
+            <p className="text-xs text-muted-foreground">{isAbroadMember ? 'Yearly fund status' : 'Monthly fund status'}</p>
           </CardContent>
         </Card>
       </div>
@@ -111,6 +116,7 @@ export default function UserDashboard() {
             <p><span className="font-medium text-gray-700">Email:</span> {member.email || '-'}</p>
             <p><span className="font-medium text-gray-700">Place:</span> {member.place}</p>
             <p><span className="font-medium text-gray-700">Phone Number:</span> {member.phoneNumber}</p>
+            <p><span className="font-medium text-gray-700">Role:</span> {isAbroadMember ? 'Abroad' : 'Local'}</p>
             <p><span className="font-medium text-gray-700">Blood Group:</span> {member.bloodGroup}</p>
           </div>
         </CardContent>
@@ -119,14 +125,14 @@ export default function UserDashboard() {
       <Card>
         <CardHeader>
           <CardTitle>Payment History</CardTitle>
-          <CardDescription>Monthly fund entries recorded by membership admin.</CardDescription>
+          <CardDescription>{isAbroadMember ? 'Yearly fund entries recorded by membership admin.' : 'Monthly fund entries recorded by membership admin.'}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="border rounded-md overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Month</TableHead>
+                  <TableHead>{isAbroadMember ? 'Year' : 'Month'}</TableHead>
                   <TableHead>Paid</TableHead>
                   <TableHead>Balance</TableHead>
                   <TableHead>Status</TableHead>
@@ -139,12 +145,12 @@ export default function UserDashboard() {
                   <TableRow><TableCell colSpan={4} className="text-center text-gray-500 py-8">No payment records found.</TableCell></TableRow>
                 ) : (
                   fees.map((fee) => {
-                    const amount = fee.amount ?? DEFAULT_FUND_AMOUNT;
+                    const amount = fee.amount ?? (isAbroadMember ? DEFAULT_ANNUAL_FUND_AMOUNT : DEFAULT_FUND_AMOUNT);
                     const paid = fee.status === 'paid' ? (fee.paidAmount ?? fee.amount ?? amount) : 0;
                     const balance = Math.max(amount - paid, 0);
                     return (
                       <TableRow key={fee.id}>
-                        <TableCell>{format(new Date(`${fee.month}-01`), 'MMMM yyyy')}</TableCell>
+                        <TableCell>{isAbroadMember ? format(new Date(`${fee.month}-01`), 'yyyy') : format(new Date(`${fee.month}-01`), 'MMMM yyyy')}</TableCell>
                         <TableCell className="text-green-700 font-medium">{formatAmount(paid)}</TableCell>
                         <TableCell className="text-orange-700 font-medium">{formatAmount(balance)}</TableCell>
                         <TableCell className={balance <= 0 ? 'text-green-700 font-medium' : 'text-amber-600 font-medium'}>

@@ -1,5 +1,6 @@
 export type AdminRole = 'student' | 'membership';
 export type UserRole = AdminRole | 'member';
+export type MemberRole = 'local' | 'abroad';
 
 export interface Student {
   id?: string;
@@ -13,6 +14,7 @@ export interface Student {
   parentMobile: string;
   phoneNumber?: string;
   bloodGroup?: string;
+  memberRole?: MemberRole;
   createdAt: number;
   updatedAt?: number;
 }
@@ -27,6 +29,7 @@ export interface Member {
   place: string;
   phoneNumber: string;
   bloodGroup: string;
+  memberRole?: MemberRole;
   photoURL?: string;
   createdAt: number;
   updatedAt?: number;

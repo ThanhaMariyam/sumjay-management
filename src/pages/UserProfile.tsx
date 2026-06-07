@@ -7,10 +7,14 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useAuth } from '../lib/AuthContext';
 import { db, handleFirestoreError } from '../lib/firebase';
 import { uploadStudentPhotoToCloudinary } from '../lib/cloudinary';
 import { useCurrentMemberProfile } from '../lib/hooks';
+import { MemberRole } from '../types';
+
+const PENDING_MEMBER_ROLE_KEY = 'sumjay.pendingMemberRole';
 
 export default function UserProfile() {
   const { user } = useAuth();
@@ -25,6 +29,7 @@ export default function UserProfile() {
     place: '',
     phoneNumber: '',
     bloodGroup: '',
+    memberRole: 'local' as MemberRole,
     photoURL: '',
   });
 
@@ -36,12 +41,15 @@ export default function UserProfile() {
         place: member.place || '',
         phoneNumber: member.phoneNumber || '',
         bloodGroup: member.bloodGroup || '',
+        memberRole: member.memberRole || 'local',
         photoURL: member.photoURL || '',
       });
     } else if (user) {
+      const pendingMemberRole = sessionStorage.getItem(PENDING_MEMBER_ROLE_KEY);
       setFormData((current) => ({
         ...current,
         name: current.name || user.displayName || user.username || '',
+        memberRole: pendingMemberRole === 'abroad' ? 'abroad' : current.memberRole,
       }));
     }
   }, [member, user]);
@@ -80,6 +88,7 @@ export default function UserProfile() {
         place: formData.place,
         phoneNumber: formData.phoneNumber,
         bloodGroup: formData.bloodGroup,
+        memberRole: formData.memberRole,
         photoURL,
       };
 
@@ -98,6 +107,7 @@ export default function UserProfile() {
         });
         toast.success('Profile created.');
       }
+      sessionStorage.removeItem(PENDING_MEMBER_ROLE_KEY);
       setPhotoFile(null);
       navigate('/user');
     } catch (error) {
@@ -155,6 +165,18 @@ export default function UserProfile() {
             <div className="space-y-2">
               <Label htmlFor="bloodGroup">Blood Group</Label>
               <Input id="bloodGroup" required placeholder="e.g. O+" value={formData.bloodGroup} onChange={(e) => setFormData({ ...formData, bloodGroup: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select value={formData.memberRole} onValueChange={(value) => setFormData({ ...formData, memberRole: value as MemberRole })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">Local</SelectItem>
+                  <SelectItem value="abroad">Abroad</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="photoUpload">Member Photo (Optional)</Label>

@@ -5,19 +5,22 @@ import { Input } from '../components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { db, handleFirestoreError } from '../lib/firebase';
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { MessageSquareWarning, MessageSquareShare } from 'lucide-react';
-import { Fee as FeeType } from '../types';
+import { Fee as FeeType, MemberRole } from '../types';
 import { sendWhatsAppMessage } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { SearchInput } from '../components/SearchInput';
 import { Pagination } from '../components/Pagination';
 import { useAuth } from '../lib/AuthContext';
+import { useMemberRoleFilter } from '../lib/memberRoleFilter';
 
 const DEFAULT_FEE_AMOUNT = 1000;
 const DEFAULT_FUND_AMOUNT = 100;
+const DEFAULT_ANNUAL_FUND_AMOUNT = DEFAULT_FUND_AMOUNT * 12;
 const PAGE_SIZE = 10;
 
 export default function Fees() {
@@ -26,6 +29,7 @@ export default function Fees() {
   const entityLabel = isMembershipAdmin ? 'Member' : 'Student';
   const contactLabel = isMembershipAdmin ? 'Phone' : 'Parent Mobile';
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [fundYear, setFundYear] = useState(format(new Date(), 'yyyy'));
   const [defaultAmount, setDefaultAmount] = useState(String(isMembershipAdmin ? DEFAULT_FUND_AMOUNT : DEFAULT_FEE_AMOUNT));
   const { fees, loading: feesLoading } = useFees();
   const [sendingIds, setSendingIds] = useState<Record<string, boolean>>({});
@@ -34,13 +38,21 @@ export default function Fees() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [paymentAmountInput, setPaymentAmountInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const { memberRoleFilter, setMemberRoleFilter } = useMemberRoleFilter();
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    setDefaultAmount(String(isMembershipAdmin ? DEFAULT_FUND_AMOUNT : DEFAULT_FEE_AMOUNT));
-  }, [isMembershipAdmin]);
+    setDefaultAmount(String(
+      isMembershipAdmin
+        ? (memberRoleFilter === 'abroad' ? DEFAULT_ANNUAL_FUND_AMOUNT : DEFAULT_FUND_AMOUNT)
+        : DEFAULT_FEE_AMOUNT,
+    ));
+  }, [isMembershipAdmin, memberRoleFilter]);
 
-  const monthFees = fees.filter(f => f.month === month);
+  const isAnnualFund = isMembershipAdmin && memberRoleFilter === 'abroad';
+  const fundPeriodKey = isAnnualFund ? `${fundYear}-01` : month;
+  const fundPeriodLabel = isAnnualFund ? fundYear : format(new Date(`${month}-01`), 'MMMM yyyy');
+  const monthFees = fees.filter(f => f.month === fundPeriodKey);
   const feeMap = monthFees.reduce((acc, curr) => {
     acc[curr.studentId] = curr;
     return acc;
@@ -58,11 +70,20 @@ export default function Fees() {
   };
 
   const formatAmount = (value: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value);
+    new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: isMembershipAdmin ? 0 : 2,
+    }).format(value);
+
+  const roleFilteredStudents = useMemo(() => {
+    if (!isMembershipAdmin) return students;
+    return students.filter((student) => (student.memberRole === 'abroad' ? 'abroad' : 'local') === memberRoleFilter);
+  }, [students, isMembershipAdmin, memberRoleFilter]);
 
   const totals = useMemo(() => {
-    const expected = students.reduce((sum, student) => sum + getStudentAmount(student.id!), 0);
-    const received = students.reduce((sum, student) => {
+    const expected = roleFilteredStudents.reduce((sum, student) => sum + getStudentAmount(student.id!), 0);
+    const received = roleFilteredStudents.reduce((sum, student) => {
       const record = feeMap[student.id!];
       if (record?.status !== 'paid') return sum;
       const paidAmount = typeof record.paidAmount === 'number'
@@ -70,7 +91,7 @@ export default function Fees() {
         : (typeof record.amount === 'number' ? record.amount : getStudentAmount(student.id!));
       return sum + paidAmount;
     }, 0);
-    const pending = students.reduce((sum, student) => {
+    const pending = roleFilteredStudents.reduce((sum, student) => {
       const record = feeMap[student.id!];
       const feeAmount = getStudentAmount(student.id!);
       const paidAmount = record?.status === 'paid'
@@ -79,10 +100,10 @@ export default function Fees() {
       return sum + Math.max(feeAmount - paidAmount, 0);
     }, 0);
     return { expected, received, pending };
-  }, [students, feeMap, defaultAmount]);
+  }, [roleFilteredStudents, feeMap, defaultAmount]);
 
   const dueStudents = useMemo(() => {
-    return students
+    return roleFilteredStudents
       .map((student) => {
         const record = feeMap[student.id!];
         const expectedAmount = getStudentAmount(student.id!);
@@ -98,20 +119,21 @@ export default function Fees() {
         };
       })
       .filter((row) => row.balanceAmount > 0);
-  }, [students, feeMap, defaultAmount]);
+  }, [roleFilteredStudents, feeMap, defaultAmount, isMembershipAdmin]);
 
   const filteredStudents = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return students;
-    return students.filter((student) => {
-      const searchable = `${student.name} ${isMembershipAdmin ? student.phoneNumber : student.parentMobile} ${student.place}`.toLowerCase();
+    if (!query) return roleFilteredStudents;
+    return roleFilteredStudents.filter((student) => {
+      const roleLabel = student.memberRole === 'abroad' ? 'abroad' : 'local';
+      const searchable = `${student.name} ${isMembershipAdmin ? student.phoneNumber : student.parentMobile} ${student.place} ${roleLabel}`.toLowerCase();
       return searchable.includes(query);
     });
-  }, [students, searchTerm, isMembershipAdmin]);
+  }, [roleFilteredStudents, searchTerm, isMembershipAdmin]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, students.length, month]);
+  }, [searchTerm, roleFilteredStudents.length, month, memberRoleFilter]);
 
   const paginatedStudents = useMemo(() => {
     const startIndex = (currentPage - 1) * PAGE_SIZE;
@@ -148,7 +170,7 @@ export default function Fees() {
           const payload: FeeType = {
               adminId: user.adminId,
               studentId,
-              month,
+              month: fundPeriodKey,
               amount,
               paidAmount: nextPaidAmount,
               status,
@@ -171,17 +193,17 @@ export default function Fees() {
   };
 
   const getPaidMessage = (studentName: string, monthStr: string) => {
-    const formattedMonth = format(new Date(monthStr + '-01'), 'MMMM yyyy');
+    const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
     if (isMembershipAdmin) {
-      return `Dear Member, your fund for ${formattedMonth} has been received. Thank you, ${studentName}.`;
+      return `Dear Member, your ${isAnnualFund ? 'annual' : 'monthly'} fund for ${formattedMonth} has been received. Thank you, ${studentName}.`;
     }
     return `Dear Parent, fees of this month (${formattedMonth}) for your ward ${studentName} has been received. Thank you.`;
   };
 
   const getWarningMessage = (studentName: string, monthStr: string) => {
-    const formattedMonth = format(new Date(monthStr + '-01'), 'MMMM yyyy');
+    const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
     if (isMembershipAdmin) {
-      return `Dear Member, this is a reminder that your fund for ${formattedMonth} is pending. Kindly pay at the earliest, ${studentName}.`;
+      return `Dear Member, this is a reminder that your ${isAnnualFund ? 'annual' : 'monthly'} fund for ${formattedMonth} is pending. Kindly pay at the earliest, ${studentName}.`;
     }
     return `Dear Parent, this is a reminder that fees for ${formattedMonth} for your ward ${studentName} is pending. Kindly pay at the earliest.`;
   };
@@ -192,10 +214,10 @@ export default function Fees() {
     expectedAmount: number,
     paidAmount: number,
   ) => {
-    const formattedMonth = format(new Date(monthStr + '-01'), 'MMMM yyyy');
+    const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
     const balance = Math.max(expectedAmount - paidAmount, 0);
     if (isMembershipAdmin) {
-      return `Dear Member, for ${formattedMonth}, we received INR ${paidAmount.toFixed(2)} from ${studentName}. Monthly fund is INR ${expectedAmount.toFixed(2)}. Pending balance is INR ${balance.toFixed(2)}. Kindly clear the balance.`;
+      return `Dear Member, for ${formattedMonth}, we received INR ${paidAmount.toFixed(2)} from ${studentName}. ${isAnnualFund ? 'Annual' : 'Monthly'} fund is INR ${expectedAmount.toFixed(2)}. Pending balance is INR ${balance.toFixed(2)}. Kindly clear the balance.`;
     }
     return `Dear Parent, for ${formattedMonth}, we received INR ${paidAmount.toFixed(2)} for your ward ${studentName}. Monthly fee is INR ${expectedAmount.toFixed(2)}. Pending balance is INR ${balance.toFixed(2)}. Kindly clear the balance.`;
   };
@@ -211,10 +233,10 @@ export default function Fees() {
     try {
       const message =
         messageType === 'receipt'
-          ? getPaidMessage(studentName, month)
+          ? getPaidMessage(studentName, fundPeriodKey)
           : messageType === 'partial' && meta
-            ? getPartialPaymentMessage(studentName, month, meta.expectedAmount, meta.paidAmount)
-            : getWarningMessage(studentName, month);
+            ? getPartialPaymentMessage(studentName, fundPeriodKey, meta.expectedAmount, meta.paidAmount)
+            : getWarningMessage(studentName, fundPeriodKey);
       await sendWhatsAppMessage(mobile, message);
       const personLabel = isMembershipAdmin ? 'member' : 'parent';
       toast.success(
@@ -258,11 +280,11 @@ export default function Fees() {
       ? (record.paidAmount ?? record.amount ?? expectedAmount)
       : 0;
     const balanceAmount = Math.max(expectedAmount - currentPaidAmount, 0);
-    if (addAmount > balanceAmount + 0.009) {
+    if (!isAnnualFund && addAmount > balanceAmount + 0.009) {
       toast.error(`Entered amount is greater than balance ${formatAmount(balanceAmount)}.`);
       return;
     }
-    const nextPaidAmount = Math.min(currentPaidAmount + addAmount, expectedAmount);
+    const nextPaidAmount = isAnnualFund ? currentPaidAmount + addAmount : Math.min(currentPaidAmount + addAmount, expectedAmount);
     const ok = await handleMark(selectedStudentId, 'paid', nextPaidAmount);
     if (!ok) return;
     setPaidDialogOpen(false);
@@ -275,16 +297,28 @@ export default function Fees() {
       <div className="flex justify-between items-center bg-white p-4 rounded-lg border shadow-sm">
         <div>
           <h1 className="text-2xl font-bold text-primary">{isMembershipAdmin ? 'Fund Record' : 'Fees Record'}</h1>
-          <p className="text-gray-500 text-sm">Manage monthly {isMembershipAdmin ? 'fund' : 'fees'}, amount and balance</p>
+          <p className="text-gray-500 text-sm">Manage {isAnnualFund ? 'yearly fund' : `monthly ${isMembershipAdmin ? 'fund' : 'fees'}`}, amount and balance</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
-          <label className="text-sm font-medium text-gray-700">Month:</label>
-          <Input 
-            type="month" 
-            value={month} 
-            onChange={(e) => setMonth(e.target.value)} 
-            className="w-auto"
-          />
+          <label className="text-sm font-medium text-gray-700">{isAnnualFund ? 'Year:' : 'Month:'}</label>
+          {isAnnualFund ? (
+            <Input
+              type="number"
+              min={2000}
+              max={2100}
+              step={1}
+              value={fundYear}
+              onChange={(e) => setFundYear(e.target.value)}
+              className="w-28"
+            />
+          ) : (
+            <Input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="w-auto"
+            />
+          )}
           <label className="text-sm font-medium text-gray-700">Default Amount:</label>
           <Input
             type="number"
@@ -294,6 +328,20 @@ export default function Fees() {
             onChange={(e) => setDefaultAmount(e.target.value)}
             className="w-36"
           />
+          {isMembershipAdmin && (
+            <>
+              <label className="text-sm font-medium text-gray-700">Role:</label>
+              <Select value={memberRoleFilter} onValueChange={(value) => setMemberRoleFilter(value as MemberRole)}>
+                <SelectTrigger className="w-36 bg-white">
+                  <SelectValue placeholder="Filter role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">Local</SelectItem>
+                  <SelectItem value="abroad">Abroad</SelectItem>
+                </SelectContent>
+              </Select>
+            </>
+          )}
           <Button
             type="button"
             onClick={() => setDueDialogOpen(true)}
@@ -349,7 +397,7 @@ export default function Fees() {
                   ? (record.paidAmount ?? record.amount ?? feeAmount)
                   : 0;
                 const balanceAmount = Math.max(feeAmount - paidAmount, 0);
-                const isPaidExact = record?.status === 'paid' && Math.abs(paidAmount - feeAmount) < 0.01;
+                const isPaidExact = record?.status === 'paid' && (isAnnualFund ? paidAmount + 0.009 >= feeAmount : Math.abs(paidAmount - feeAmount) < 0.01);
                 const hasPaidMismatch = record?.status === 'paid' && !isPaidExact;
                 // Show warning as soon as a row is marked unpaid (or no payment exists yet).
                 const isOverdue = !record || record.status === 'unpaid';
@@ -487,7 +535,7 @@ export default function Fees() {
                 autoFocus
               />
               <p className="text-xs text-gray-500">
-                Monthly amount to be paid: {formatAmount(parseAmount(defaultAmount))}
+                {isAnnualFund ? 'Yearly' : 'Monthly'} amount to be paid: {formatAmount(parseAmount(defaultAmount))}
               </p>
             </div>
             <div className="flex justify-end gap-2">
@@ -511,7 +559,7 @@ export default function Fees() {
       <Dialog open={dueDialogOpen} onOpenChange={setDueDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Due {entityLabel}s ({format(new Date(`${month}-01`), 'MMMM yyyy')})</DialogTitle>
+            <DialogTitle>Due {entityLabel}s ({fundPeriodLabel})</DialogTitle>
           </DialogHeader>
           <div className="max-h-[420px] overflow-auto border rounded-md">
             <Table>

@@ -32,7 +32,9 @@ function Select({ value, onValueChange, children }: SelectProps) {
 
   return (
     <SelectContext.Provider value={{ value, onValueChange, open, setOpen }}>
-      <SelectItemRegistryContext.Provider value={itemLabels}>{children}</SelectItemRegistryContext.Provider>
+      <SelectItemRegistryContext.Provider value={itemLabels}>
+        <div className="relative">{children}</div>
+      </SelectItemRegistryContext.Provider>
     </SelectContext.Provider>
   );
 }
@@ -66,7 +68,13 @@ function SelectValue({ placeholder }: { placeholder?: string }) {
   const { value } = useSelectContext();
   const labels = React.useContext(SelectItemRegistryContext);
   const label = value && labels ? labels.get(value) : undefined;
-  return <>{label ?? placeholder ?? "Select"}</>;
+  const fallbackLabel = value
+    ? value
+        .split(/[-_\s]+/)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ")
+    : undefined;
+  return <>{label ?? fallbackLabel ?? placeholder ?? "Select"}</>;
 }
 
 const SelectContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
@@ -80,7 +88,7 @@ const SelectContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
     return (
       <div
         ref={ref}
-        className={cn("relative z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border bg-popover p-1 shadow-md", className)}
+        className={cn("absolute left-0 top-full z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border bg-popover p-1 shadow-md", className)}
         {...props}
       />
     );

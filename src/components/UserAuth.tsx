@@ -5,16 +5,21 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useAuth } from '../lib/AuthContext';
 import { auth, db } from '../lib/firebase';
 import { collection, getDocs, limit, query, updateDoc, where } from 'firebase/firestore';
 import sumjayLogo from '../assets/sumjay-logo.png';
+import { MemberRole } from '../types';
+
+const PENDING_MEMBER_ROLE_KEY = 'sumjay.pendingMemberRole';
 
 export default function UserAuth({ mode }: { mode: 'login' | 'signup' }) {
   const { user, isMemberUser, loginMember, signupMember, loginMemberWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [name, setName] = useState('');
+  const [memberRole, setMemberRole] = useState<MemberRole>('local');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -52,6 +57,7 @@ export default function UserAuth({ mode }: { mode: 'login' | 'signup' }) {
     await updateDoc(memberSnap.ref, {
       userId: firebaseUser.uid,
       email: loginEmail,
+      memberRole,
       updatedAt: Date.now(),
     });
   };
@@ -64,6 +70,7 @@ export default function UserAuth({ mode }: { mode: 'login' | 'signup' }) {
       const ok = isSignup
         ? await signupMember(email, password, name)
         : await loginMember(email, password);
+      if (ok && isSignup) sessionStorage.setItem(PENDING_MEMBER_ROLE_KEY, memberRole);
       if (ok) await claimExistingMemberProfile();
       finishAuth(ok);
     } catch (err) {
@@ -78,6 +85,7 @@ export default function UserAuth({ mode }: { mode: 'login' | 'signup' }) {
     setGoogleLoading(true);
     try {
       const ok = await loginMemberWithGoogle();
+      if (ok && isSignup) sessionStorage.setItem(PENDING_MEMBER_ROLE_KEY, memberRole);
       if (ok) await claimExistingMemberProfile();
       finishAuth(ok);
     } catch (err) {
@@ -105,6 +113,20 @@ export default function UserAuth({ mode }: { mode: 'login' | 'signup' }) {
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name</Label>
                 <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter your name" required />
+              </div>
+            )}
+            {isSignup && (
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={memberRole} onValueChange={(value) => setMemberRole(value as MemberRole)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="local">Local</SelectItem>
+                    <SelectItem value="abroad">Abroad</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
             <div className="space-y-2">

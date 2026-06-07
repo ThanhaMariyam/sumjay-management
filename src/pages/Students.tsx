@@ -5,15 +5,17 @@ import { Input } from '../components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { db, handleFirestoreError } from '../lib/firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
-import { Student } from '../types';
+import { MemberRole, Student } from '../types';
 import { uploadStudentPhotoToCloudinary } from '../lib/cloudinary';
 import { SearchInput } from '../components/SearchInput';
 import { Pagination } from '../components/Pagination';
 import { useAuth } from '../lib/AuthContext';
 import { Phone } from 'lucide-react';
+import { useMemberRoleFilter } from '../lib/memberRoleFilter';
 
 const PAGE_SIZE = 10;
 
@@ -30,6 +32,7 @@ export default function Students() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const { memberRoleFilter, setMemberRoleFilter } = useMemberRoleFilter();
   const [currentPage, setCurrentPage] = useState(1);
 
   const [formData, setFormData] = useState({
@@ -40,6 +43,7 @@ export default function Students() {
     phoneNumber: '',
     bloodGroup: '',
     email: '',
+    memberRole: 'local' as MemberRole,
     photoURL: ''
   });
 
@@ -48,16 +52,20 @@ export default function Students() {
 
   const filteredStudents = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return students;
     return students.filter((student) => {
-      const searchable = `${student.name} ${student.dob} ${student.place} ${contactValue(student)} ${student.bloodGroup || ''} ${student.email || ''}`.toLowerCase();
+      const roleLabel = student.memberRole === 'abroad' ? 'abroad' : 'local';
+      if (isMembershipAdmin && roleLabel !== memberRoleFilter) {
+        return false;
+      }
+      if (!query) return true;
+      const searchable = `${student.name} ${student.dob} ${student.place} ${contactValue(student)} ${student.bloodGroup || ''} ${student.email || ''} ${roleLabel}`.toLowerCase();
       return searchable.includes(query);
     });
-  }, [students, searchTerm, isMembershipAdmin]);
+  }, [students, searchTerm, isMembershipAdmin, memberRoleFilter]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, students.length]);
+  }, [searchTerm, students.length, memberRoleFilter]);
 
   const paginatedStudents = useMemo(() => {
     const startIndex = (currentPage - 1) * PAGE_SIZE;
@@ -100,6 +108,7 @@ export default function Students() {
               phoneNumber: formData.phoneNumber,
               bloodGroup: formData.bloodGroup,
               email: formData.email.trim().toLowerCase(),
+              memberRole: formData.memberRole,
               ...(editingStudent?.userId ? { userId: editingStudent.userId } : {}),
             }
           : { parentMobile: formData.parentMobile }),
@@ -128,7 +137,7 @@ export default function Students() {
       setIsOpen(false);
       setEditingStudent(null);
       setPhotoFile(null);
-      setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', email: '', photoURL: '' });
+      setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', email: '', memberRole: 'local', photoURL: '' });
     } catch (error) {
       setSaveError(`Failed to save ${itemLabel.toLowerCase()}. Please try again.`);
       handleFirestoreError(error, 'write' as any, collectionName);
@@ -156,6 +165,7 @@ export default function Students() {
       phoneNumber: student.phoneNumber || '',
       bloodGroup: student.bloodGroup || '',
       email: student.email || '',
+      memberRole: student.memberRole || 'local',
       photoURL: student.photoURL || ''
     });
     setPhotoFile(null);
@@ -177,7 +187,7 @@ export default function Students() {
               setEditingStudent(null);
               setPhotoFile(null);
               setSaveError('');
-              setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', email: '', photoURL: '' });
+              setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', email: '', memberRole: 'local', photoURL: '' });
             }}>Add {itemLabel}</Button>
           </DialogTrigger>
           <DialogContent>
@@ -219,6 +229,20 @@ export default function Students() {
                   <Input required placeholder="e.g. O+" value={formData.bloodGroup} onChange={e => setFormData({ ...formData, bloodGroup: e.target.value })} />
                 </div>
               )}
+              {isMembershipAdmin && (
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={formData.memberRole} onValueChange={(value) => setFormData({ ...formData, memberRole: value as MemberRole })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="local">Local</SelectItem>
+                      <SelectItem value="abroad">Abroad</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="photoUpload">{itemLabel} Photo (Optional)</Label>
                 <Input id="photoUpload" type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)} />
@@ -251,6 +275,7 @@ export default function Students() {
                 <p><span className="font-medium text-gray-700">Date of Birth:</span> {selectedStudent.dob}</p>
                 <p><span className="font-medium text-gray-700">Place:</span> {selectedStudent.place}</p>
                 {isMembershipAdmin && <p><span className="font-medium text-gray-700">Email:</span> {selectedStudent.email || '-'}</p>}
+                {isMembershipAdmin && <p><span className="font-medium text-gray-700">Role:</span> {selectedStudent.memberRole === 'abroad' ? 'Abroad' : 'Local'}</p>}
                 <p><span className="font-medium text-gray-700">{isMembershipAdmin ? 'Phone Number' : 'Parent WhatsApp'}:</span> {contactValue(selectedStudent)}</p>
                 <a
                   href={phoneHref(contactValue(selectedStudent))}
@@ -267,11 +292,26 @@ export default function Students() {
         </DialogContent>
       </Dialog>
 
-      <SearchInput
-        value={searchTerm}
-        onChange={setSearchTerm}
-        placeholder={isMembershipAdmin ? 'Search by name, DOB, place, phone, blood group' : 'Search by name, DOB, place or parent mobile'}
-      />
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <SearchInput
+          value={searchTerm}
+          onChange={setSearchTerm}
+          placeholder={isMembershipAdmin ? 'Search by name, DOB, place, phone, blood group or role' : 'Search by name, DOB, place or parent mobile'}
+        />
+        {isMembershipAdmin && (
+          <div className="w-full md:w-48">
+            <Select value={memberRoleFilter} onValueChange={(value) => setMemberRoleFilter(value as MemberRole)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Filter role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">Local</SelectItem>
+                <SelectItem value="abroad">Abroad</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
 
       <div className="border rounded-md bg-white">
         <Table>
@@ -281,15 +321,16 @@ export default function Students() {
               <TableHead>DOB</TableHead>
               <TableHead>Place</TableHead>
               <TableHead>{isMembershipAdmin ? 'Phone Number' : 'Parent Mobile'}</TableHead>
+              {isMembershipAdmin && <TableHead>Role</TableHead>}
               {isMembershipAdmin && <TableHead>Blood Group</TableHead>}
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={isMembershipAdmin ? 6 : 5} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={isMembershipAdmin ? 7 : 5} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : filteredStudents.length === 0 ? (
-              <TableRow><TableCell colSpan={isMembershipAdmin ? 6 : 5} className="text-center text-gray-500 py-8">No {itemLabel.toLowerCase()}s found. Add one to get started.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={isMembershipAdmin ? 7 : 5} className="text-center text-gray-500 py-8">No {itemLabel.toLowerCase()}s found. Add one to get started.</TableCell></TableRow>
             ) : (
               paginatedStudents.map(student => (
                 <TableRow key={student.id} className="cursor-pointer hover:bg-gray-50" onClick={() => { setSelectedStudent(student); setIsDetailsOpen(true); }}>
@@ -321,6 +362,7 @@ export default function Students() {
                       </a>
                     </div>
                   </TableCell>
+                  {isMembershipAdmin && <TableCell>{student.memberRole === 'abroad' ? 'Abroad' : 'Local'}</TableCell>}
                   {isMembershipAdmin && <TableCell>{student.bloodGroup}</TableCell>}
                   <TableCell className="text-right space-x-2">
                     <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(student); }}>Edit</Button>

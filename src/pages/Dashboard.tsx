@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import {
   Cell,
   Pie,
@@ -15,6 +16,8 @@ import {
   Tooltip,
 } from 'recharts';
 import { useAuth } from '../lib/AuthContext';
+import { MemberRole } from '../types';
+import { useMemberRoleFilter } from '../lib/memberRoleFilter';
 
 type CompactTooltipProps = {
   active?: boolean;
@@ -37,6 +40,7 @@ function CompactTooltip({ active, payload }: CompactTooltipProps) {
 
 const DEFAULT_FEE_AMOUNT = 1000;
 const DEFAULT_FUND_AMOUNT = 100;
+const DEFAULT_ANNUAL_FUND_AMOUNT = DEFAULT_FUND_AMOUNT * 12;
 
 export default function Dashboard() {
   const { isMembershipAdmin } = useAuth();
@@ -46,6 +50,7 @@ export default function Dashboard() {
   const { fees, loading: fl } = useFees();
   const [now, setNow] = useState(new Date());
   const [dueDialogOpen, setDueDialogOpen] = useState(false);
+  const { memberRoleFilter, setMemberRoleFilter } = useMemberRoleFilter();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -56,6 +61,9 @@ export default function Dashboard() {
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const monthStr = format(new Date(), 'yyyy-MM');
+  const yearStr = format(new Date(), 'yyyy');
+  const fundPeriodKey = isMembershipAdmin && memberRoleFilter === 'abroad' ? `${yearStr}-01` : monthStr;
+  const fundPeriodLabel = isMembershipAdmin && memberRoleFilter === 'abroad' ? yearStr : format(new Date(`${monthStr}-01`), 'MMMM yyyy');
   const todayDate = new Date().getDate();
 
   const todaysAttendance = attendance.filter(a => a.date === todayStr);
@@ -63,34 +71,38 @@ export default function Dashboard() {
   const absentCount = todaysAttendance.filter(a => a.status === 'absent').length;
   // Unmarked could be students.length - todaysAttendance.length
 
-  const monthFees = fees.filter(f => f.month === monthStr);
+  const filteredMembers = useMemo(() => {
+    return members.filter((member) => (member.memberRole === 'abroad' ? 'abroad' : 'local') === memberRoleFilter);
+  }, [members, memberRoleFilter]);
+  const activePeople = isMembershipAdmin ? filteredMembers : students;
+  const fallbackAmount = isMembershipAdmin
+    ? (memberRoleFilter === 'abroad' ? DEFAULT_ANNUAL_FUND_AMOUNT : DEFAULT_FUND_AMOUNT)
+    : DEFAULT_FEE_AMOUNT;
+  const monthFees = fees.filter(f => f.month === fundPeriodKey);
   const monthFeeMap = monthFees.reduce((acc, fee) => {
     acc[fee.studentId] = fee;
     return acc;
   }, {} as Record<string, typeof monthFees[number]>);
   const isAmountEqual = (a: number, b: number) => Math.abs(a - b) < 0.01;
-  const paidCount = monthFees.filter((fee) => {
-    if (fee.status !== 'paid') return false;
-    const expectedAmount = typeof fee.amount === 'number' ? fee.amount : 0;
-    const paidAmount = typeof fee.paidAmount === 'number' ? fee.paidAmount : expectedAmount;
-    return isAmountEqual(paidAmount, expectedAmount);
-  }).length;
-  const partialPaidCount = monthFees.filter((fee) => {
-    if (fee.status !== 'paid') return false;
-    const expectedAmount = typeof fee.amount === 'number' ? fee.amount : 0;
-    const paidAmount = typeof fee.paidAmount === 'number' ? fee.paidAmount : expectedAmount;
-    return !isAmountEqual(paidAmount, expectedAmount);
-  }).length;
-  const activePeople = isMembershipAdmin ? members : students;
+  const isFullPayment = (paidAmount: number, expectedAmount: number) => (
+    isMembershipAdmin && memberRoleFilter === 'abroad'
+      ? paidAmount + 0.009 >= expectedAmount
+      : isAmountEqual(paidAmount, expectedAmount)
+  );
+  const monthlyPaymentRows = activePeople.map((person) => {
+    const record = monthFeeMap[person.id!];
+    const expectedAmount = typeof record?.amount === 'number' && record.amount >= 0 ? record.amount : fallbackAmount;
+    const paidAmount = record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? expectedAmount) : 0;
+    return { expectedAmount, paidAmount, isPaid: record?.status === 'paid' };
+  });
+  const paidCount = monthlyPaymentRows.filter((row) => row.isPaid && isFullPayment(row.paidAmount, row.expectedAmount)).length;
+  const partialPaidCount = monthlyPaymentRows.filter((row) => row.isPaid && !isFullPayment(row.paidAmount, row.expectedAmount)).length;
   const pendingCount = Math.max(activePeople.length - paidCount - partialPaidCount, 0);
-  const monthlyReceivedAmount = monthFees.reduce((sum, fee) => {
-    if (fee.status !== 'paid') return sum;
-    const amount = typeof fee.paidAmount === 'number' ? fee.paidAmount : (fee.amount ?? 0);
-    return sum + amount;
-  }, 0);
+  const monthlyExpectedAmount = monthlyPaymentRows.reduce((sum, row) => sum + row.expectedAmount, 0);
+  const monthlyReceivedAmount = monthlyPaymentRows.reduce((sum, row) => sum + row.paidAmount, 0);
 
-  const formatAmount = (value: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value);
+  const formatWholeAmount = (value: number) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
   const attendanceChartData = useMemo(() => [
     { name: 'Present', value: presentCount, color: '#16a34a' },
@@ -105,7 +117,6 @@ export default function Dashboard() {
   ], [paidCount, partialPaidCount, pendingCount]);
 
   const dueStudents = useMemo(() => {
-    const fallbackAmount = isMembershipAdmin ? DEFAULT_FUND_AMOUNT : DEFAULT_FEE_AMOUNT;
     return activePeople
       .map((student) => {
         const record = monthFeeMap[student.id!];
@@ -136,6 +147,17 @@ export default function Dashboard() {
             <p className="font-medium">{format(now, 'EEEE, dd MMMM yyyy')}</p>
             <p className="text-xs text-gray-500">{format(now, 'hh:mm:ss a')}</p>
           </div>
+          {isMembershipAdmin && (
+            <Select value={memberRoleFilter} onValueChange={(value) => setMemberRoleFilter(value as MemberRole)}>
+              <SelectTrigger className="w-40 bg-white shadow-sm">
+                <SelectValue placeholder="Filter role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">Local</SelectItem>
+                <SelectItem value="abroad">Abroad</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           <Button
             type="button"
             onClick={() => setDueDialogOpen(true)}
@@ -146,14 +168,14 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+      <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${isMembershipAdmin ? '' : 'xl:grid-cols-4'}`}>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{isMembershipAdmin ? 'Total Members' : 'Total Students'}</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{isMembershipAdmin ? (ml ? '...' : members.length) : (sl ? '...' : students.length)}</div>
+            <div className="text-2xl font-bold">{isMembershipAdmin ? (ml ? '...' : activePeople.length) : (sl ? '...' : students.length)}</div>
             <p className="text-xs text-muted-foreground">Registered in the system</p>
           </CardContent>
         </Card>
@@ -175,32 +197,36 @@ export default function Dashboard() {
           </CardContent>
         </Card>}
 
-        <Card>
+        {!isMembershipAdmin && <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{isMembershipAdmin ? 'Fund this Month' : 'Fees this Month'}</CardTitle>
             <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-                {fl ? '...' : (isMembershipAdmin ? formatAmount(monthlyReceivedAmount) : `${paidCount} Paid`)}
+                {fl ? '...' : `${paidCount} Paid`}
             </div>
-            {!isMembershipAdmin && <>
+            <>
               <p className="text-xs text-amber-600 font-medium">{partialPaidCount} Partial Paid</p>
               <p className="text-xs text-orange-600 font-medium">{pendingCount} Pending</p>
-            </>}
+            </>
           </CardContent>
-        </Card>
+        </Card>}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Amount Received This Month</CardTitle>
+            <CardTitle className="text-sm font-medium">{isMembershipAdmin && memberRoleFilter === 'abroad' ? 'Amount Received This Year' : 'Amount Received This Month'}</CardTitle>
             <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-700">
-              {fl ? '...' : formatAmount(monthlyReceivedAmount)}
+              {fl
+                ? '...'
+                : `${formatWholeAmount(monthlyReceivedAmount)} / ${formatWholeAmount(monthlyExpectedAmount)}`}
             </div>
-            <p className="text-xs text-muted-foreground">Collection tracked from fee records</p>
+            <p className="text-xs text-muted-foreground">
+              Received / total expected
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -237,7 +263,7 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{isMembershipAdmin ? 'Fund Status This Month' : 'Fee Status This Month'}</CardTitle>
+            <CardTitle>{isMembershipAdmin ? (memberRoleFilter === 'abroad' ? 'Fund Status This Year' : 'Fund Status This Month') : 'Fee Status This Month'}</CardTitle>
             <CardDescription>{isMembershipAdmin ? 'Paid vs pending members' : 'Paid vs pending students'}</CardDescription>
           </CardHeader>
           <CardContent className="h-[100px] pt-0">
@@ -274,7 +300,7 @@ export default function Dashboard() {
                    {todayDate > 3 ? (
                        <span className="flex items-center text-red-600 gap-1"><AlertCircle className="w-4 h-4"/> Overdue: Please notify pending fund payments.</span>
                    ) : (
-                       "Fund is due by the 3rd of the month."
+                       memberRoleFilter === 'abroad' ? 'Annual fund is due by the 3rd.' : 'Fund is due by the 3rd of the month.'
                    )}
                 </p>
                 <Button asChild variant="secondary" className="w-full sm:w-auto">
@@ -323,7 +349,7 @@ export default function Dashboard() {
       <Dialog open={dueDialogOpen} onOpenChange={setDueDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Due {isMembershipAdmin ? 'Members' : 'Students'} ({format(new Date(`${monthStr}-01`), 'MMMM yyyy')})</DialogTitle>
+            <DialogTitle>Due {isMembershipAdmin ? 'Members' : 'Students'} ({fundPeriodLabel})</DialogTitle>
           </DialogHeader>
           <div className="max-h-[420px] overflow-auto border rounded-md">
             <Table>
@@ -351,8 +377,8 @@ export default function Dashboard() {
                           <p className="text-xs text-gray-500">{row.parentMobile}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="text-green-700 font-medium">{formatAmount(row.paidAmount)}</TableCell>
-                      <TableCell className="text-orange-700 font-medium">{formatAmount(row.balanceAmount)}</TableCell>
+                      <TableCell className="text-green-700 font-medium">{formatWholeAmount(row.paidAmount)}</TableCell>
+                      <TableCell className="text-orange-700 font-medium">{formatWholeAmount(row.balanceAmount)}</TableCell>
                       <TableCell>
                         <span className={row.status === 'UNPAID' ? 'text-red-600 font-medium' : 'text-amber-600 font-medium'}>
                           {row.status}
