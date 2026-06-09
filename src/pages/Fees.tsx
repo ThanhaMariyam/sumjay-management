@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { db, handleFirestoreError } from '../lib/firebase';
 import { collection, doc, setDoc } from 'firebase/firestore';
-import { format } from 'date-fns';
+import { addMonths, format } from 'date-fns';
 import { Crown, Flame, MessageSquareWarning, MessageSquareShare } from 'lucide-react';
 import { Fee as FeeType, MemberRole } from '../types';
 import { sendWhatsAppMessage } from '../lib/whatsapp';
@@ -37,6 +37,7 @@ export default function Fees() {
   const [dueDialogOpen, setDueDialogOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [paymentAmountInput, setPaymentAmountInput] = useState('');
+  const [paymentDialogMode, setPaymentDialogMode] = useState<'paid' | 'partial'>('partial');
   const [searchTerm, setSearchTerm] = useState('');
   const { memberRoleFilter, setMemberRoleFilter } = useMemberRoleFilter();
   const [currentPage, setCurrentPage] = useState(1);
@@ -57,6 +58,12 @@ export default function Fees() {
     acc[curr.studentId] = curr;
     return acc;
   }, {} as Record<string, FeeType>);
+  const feeByStudentAndMonth = useMemo(() => {
+    return fees.reduce((acc, curr) => {
+      acc[`${curr.studentId}:${curr.month}`] = curr;
+      return acc;
+    }, {} as Record<string, FeeType>);
+  }, [fees]);
 
   const parseAmount = (value: string) => {
     const parsed = Number(value);
@@ -75,12 +82,39 @@ export default function Fees() {
     return record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? expectedAmount) : 0;
   };
 
+  const getLocalFundSummary = (studentId: string) => {
+    const monthlyAmount = parseAmount(defaultAmount);
+    const memberFees = fees
+      .filter((fee) => fee.studentId === studentId && fee.status === 'paid')
+      .slice()
+      .sort((a, b) => (a.month ?? '').localeCompare(b.month ?? ''));
+    const totalPaid = memberFees.reduce((sum, fee) => sum + (fee.paidAmount ?? fee.amount ?? 0), 0);
+    const fullyPaidMonths = memberFees
+      .filter((fee) => monthlyAmount > 0 && (fee.paidAmount ?? fee.amount ?? 0) + 0.009 >= monthlyAmount)
+      .map((fee) => fee.month);
+    const paidThrough = fullyPaidMonths[fullyPaidMonths.length - 1];
+    const partialMonth = memberFees.find((fee) => {
+      const paid = fee.paidAmount ?? fee.amount ?? 0;
+      return paid > 0.009 && monthlyAmount > 0 && paid + 0.009 < monthlyAmount;
+    });
+
+    return {
+      totalPaid,
+      paidThrough,
+      partialMonth: partialMonth?.month,
+      partialAmount: partialMonth ? (partialMonth.paidAmount ?? partialMonth.amount ?? 0) : 0,
+    };
+  };
+
   const formatAmount = (value: number) =>
     new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
       maximumFractionDigits: isMembershipAdmin ? 0 : 2,
     }).format(value);
+
+  const formatMonthLabel = (monthValue?: string) =>
+    monthValue ? format(new Date(`${monthValue}-01`), 'MMM yyyy') : '';
 
   const roleFilteredStudents = useMemo(() => {
     if (!isMembershipAdmin) return students;
@@ -128,7 +162,7 @@ export default function Fees() {
   }, [roleFilteredStudents, feeMap, defaultAmount, isMembershipAdmin]);
 
   const topExtraPaidMembers = useMemo(() => {
-    if (!isMembershipAdmin) return new Map<string, number>();
+    if (!isMembershipAdmin || !isAnnualFund) return new Map<string, number>();
 
     const rankedMembers = roleFilteredStudents
       .map((student) => ({
@@ -144,7 +178,7 @@ export default function Fees() {
       acc.set(row.id, index + 1);
       return acc;
     }, new Map<string, number>());
-  }, [isMembershipAdmin, roleFilteredStudents, feeMap, defaultAmount]);
+  }, [isMembershipAdmin, isAnnualFund, roleFilteredStudents, feeMap, defaultAmount]);
 
   const filteredStudents = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -156,7 +190,7 @@ export default function Fees() {
     })
       : roleFilteredStudents;
 
-    if (!isMembershipAdmin) return visibleStudents;
+    if (!isMembershipAdmin || !isAnnualFund) return visibleStudents;
     return visibleStudents
       .slice()
       .sort((a, b) => getPaidAmount(b.id!) - getPaidAmount(a.id!));
@@ -223,6 +257,65 @@ export default function Fees() {
     }
   };
 
+  const handleLocalFundPayment = async (studentId: string, receivedAmount: number) => {
+    if (!user) return false;
+    try {
+      const amount = getStudentAmount(studentId);
+      if (amount <= 0) {
+        toast.error('Please set a monthly fund amount greater than 0.');
+        return false;
+      }
+      const paidOn = format(new Date(), 'yyyy-MM-dd');
+      const paidAt = Date.now();
+      let remainingAmount = receivedAmount;
+      let periodDate = new Date(`${month}-01T00:00:00`);
+
+      while (remainingAmount > 0.009) {
+        const periodKey = format(periodDate, 'yyyy-MM');
+        const existing = feeByStudentAndMonth[`${studentId}:${periodKey}`];
+        const currentPaidAmount = existing?.status === 'paid'
+          ? (existing.paidAmount ?? existing.amount ?? amount)
+          : 0;
+        const balanceAmount = Math.max(amount - currentPaidAmount, 0);
+
+        if (balanceAmount <= 0.009) {
+          periodDate = addMonths(periodDate, 1);
+          continue;
+        }
+
+        const amountForPeriod = Math.min(remainingAmount, balanceAmount);
+        const nextPaidAmount = Math.round((currentPaidAmount + amountForPeriod) * 100) / 100;
+        const payload: FeeType = {
+          ...(existing ?? {}),
+          adminId: existing?.adminId ?? user.adminId,
+          studentId,
+          month: periodKey,
+          amount,
+          paidAmount: nextPaidAmount,
+          status: 'paid',
+          paidOn,
+          paidAt,
+          createdAt: existing?.createdAt ?? Date.now(),
+          updatedAt: Date.now(),
+        };
+
+        await setDoc(existing?.id ? doc(db, 'fees', existing.id) : doc(collection(db, 'fees')), payload);
+        remainingAmount = Math.round((remainingAmount - amountForPeriod) * 100) / 100;
+        periodDate = addMonths(periodDate, 1);
+      }
+
+      return true;
+    } catch (error) {
+      toast.error('Failed to update fund record. Please check Firestore rules and try again.');
+      try {
+        handleFirestoreError(error, 'write' as any, 'fees');
+      } catch (loggedError) {
+        console.error(loggedError);
+      }
+      return false;
+    }
+  };
+
   const getPaidMessage = (studentName: string, monthStr: string) => {
     const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
     if (isMembershipAdmin) {
@@ -286,7 +379,14 @@ export default function Fees() {
 
   const selectedStudent = students.find((student) => student.id === selectedStudentId);
 
-  const openPaidAmountDialog = (studentId: string) => {
+  const closePaymentDialog = () => {
+    setPaidDialogOpen(false);
+    setSelectedStudentId(null);
+    setPaymentAmountInput('');
+    setPaymentDialogMode('partial');
+  };
+
+  const openPaidAmountDialog = (studentId: string, mode: 'paid' | 'partial') => {
     const record = feeMap[studentId];
     const expectedAmount = getStudentAmount(studentId);
     const currentPaidAmount = record?.status === 'paid'
@@ -294,8 +394,24 @@ export default function Fees() {
       : 0;
     const balanceAmount = Math.max(expectedAmount - currentPaidAmount, 0);
     setSelectedStudentId(studentId);
-    setPaymentAmountInput(balanceAmount > 0 ? String(balanceAmount) : '');
+    setPaymentDialogMode(mode);
+    setPaymentAmountInput(mode === 'paid' && balanceAmount > 0 ? String(balanceAmount) : '');
     setPaidDialogOpen(true);
+  };
+
+  const handleMarkFullPaid = async (studentId: string) => {
+    const expectedAmount = getStudentAmount(studentId);
+    const record = feeMap[studentId];
+    const currentPaidAmount = record?.status === 'paid'
+      ? (record.paidAmount ?? record.amount ?? expectedAmount)
+      : 0;
+    const balanceAmount = Math.max(expectedAmount - currentPaidAmount, 0);
+    if (balanceAmount <= 0.009) return;
+    if (isMembershipAdmin && !isAnnualFund) {
+      await handleLocalFundPayment(studentId, balanceAmount);
+      return;
+    }
+    await handleMark(studentId, 'paid', currentPaidAmount + balanceAmount);
   };
 
   const handleConfirmPaid = async () => {
@@ -311,6 +427,12 @@ export default function Fees() {
       ? (record.paidAmount ?? record.amount ?? expectedAmount)
       : 0;
     const balanceAmount = Math.max(expectedAmount - currentPaidAmount, 0);
+    if (isMembershipAdmin && !isAnnualFund) {
+      const ok = await handleLocalFundPayment(selectedStudentId, addAmount);
+      if (!ok) return;
+      closePaymentDialog();
+      return;
+    }
     if (!isMembershipAdmin && addAmount > balanceAmount + 0.009) {
       toast.error(`Entered amount is greater than balance ${formatAmount(balanceAmount)}.`);
       return;
@@ -318,9 +440,7 @@ export default function Fees() {
     const nextPaidAmount = isMembershipAdmin ? currentPaidAmount + addAmount : Math.min(currentPaidAmount + addAmount, expectedAmount);
     const ok = await handleMark(selectedStudentId, 'paid', nextPaidAmount);
     if (!ok) return;
-    setPaidDialogOpen(false);
-    setSelectedStudentId(null);
-    setPaymentAmountInput('');
+    closePaymentDialog();
   };
 
   return (
@@ -430,6 +550,8 @@ export default function Fees() {
                 const balanceAmount = Math.max(feeAmount - paidAmount, 0);
                 const isPaidExact = record?.status === 'paid' && (isMembershipAdmin ? paidAmount + 0.009 >= feeAmount : Math.abs(paidAmount - feeAmount) < 0.01);
                 const hasPaidMismatch = record?.status === 'paid' && !isPaidExact;
+                const isLocalFund = isMembershipAdmin && !isAnnualFund;
+                const localFundSummary = isLocalFund ? getLocalFundSummary(student.id!) : null;
                 // Show warning as soon as a row is marked unpaid (or no payment exists yet).
                 const isOverdue = !record || record.status === 'unpaid';
 
@@ -444,7 +566,7 @@ export default function Fees() {
                         <div>
                           <p className="flex items-center gap-1.5 font-medium">
                             <span>{student.name}</span>
-                            {isMembershipAdmin && topExtraPaidMembers.has(student.id!) && (
+                            {isMembershipAdmin && isAnnualFund && topExtraPaidMembers.has(student.id!) && (
                               <Crown
                                 className="h-4 w-4"
                                 style={{
@@ -464,23 +586,40 @@ export default function Fees() {
                       </div>
                     </TableCell>
                     <TableCell className="text-green-700 font-medium">
-                      <span className="inline-flex items-center gap-1.5">
-                        {formatAmount(paidAmount)}
-                        {isMembershipAdmin && paidAmount > feeAmount + 0.009 && (
-                          <Flame className="h-4 w-4 fill-orange-500 text-orange-500" aria-label="Paid above minimum" />
+                      <div className="space-y-1">
+                        <span className="inline-flex items-center gap-1.5">
+                          {formatAmount(paidAmount)}
+                          {isMembershipAdmin && isAnnualFund && paidAmount > feeAmount + 0.009 && (
+                            <Flame className="h-4 w-4 fill-orange-500 text-orange-500" aria-label="Paid above minimum" />
+                          )}
+                        </span>
+                        {localFundSummary && localFundSummary.totalPaid > 0 && (
+                          <p className="text-xs font-normal text-yellow-600">
+                            Total {formatAmount(localFundSummary.totalPaid)}
+                            {localFundSummary.paidThrough ? ` · Paid up to ${formatMonthLabel(localFundSummary.paidThrough)}` : ''}
+                            {localFundSummary.partialMonth ? ` · Partial ${formatMonthLabel(localFundSummary.partialMonth)} ${formatAmount(localFundSummary.partialAmount)}` : ''}
+                          </p>
                         )}
-                      </span>
+                      </div>
                     </TableCell>
                     <TableCell className="text-orange-700 font-medium">{formatAmount(balanceAmount)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Button 
-                          variant={record?.status === 'paid' ? 'default' : 'outline'}
-                          className={record?.status === 'paid' ? 'bg-green-600 hover:bg-green-700' : ''}
-                          onClick={() => openPaidAmountDialog(student.id!)}
+                          variant={isPaidExact ? 'default' : 'outline'}
+                          className={isPaidExact ? 'bg-green-600 hover:bg-green-700' : ''}
+                          onClick={() => handleMarkFullPaid(student.id!)}
                           size="sm"
                         >
                           Paid
+                        </Button>
+                        <Button
+                          variant={hasPaidMismatch ? 'default' : 'outline'}
+                          className={hasPaidMismatch ? 'bg-amber-500 hover:bg-amber-600' : ''}
+                          onClick={() => openPaidAmountDialog(student.id!, 'partial')}
+                          size="sm"
+                        >
+                          Partial
                         </Button>
                         <Button 
                           variant={record?.status === 'unpaid' ? 'default' : 'outline'}
@@ -541,10 +680,10 @@ export default function Fees() {
         />
       )}
 
-      <Dialog open={paidDialogOpen} onOpenChange={setPaidDialogOpen}>
+      <Dialog open={paidDialogOpen} onOpenChange={(open) => (open ? setPaidDialogOpen(true) : closePaymentDialog())}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Payment Amount</DialogTitle>
+            <DialogTitle>{paymentDialogMode === 'partial' ? 'Add Partial Amount' : 'Add Payment Amount'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             {selectedStudent && (
@@ -596,11 +735,7 @@ export default function Fees() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setPaidDialogOpen(false);
-                  setSelectedStudentId(null);
-                  setPaymentAmountInput('');
-                }}
+                onClick={closePaymentDialog}
               >
                 Cancel
               </Button>

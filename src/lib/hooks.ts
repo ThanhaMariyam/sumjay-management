@@ -17,7 +17,7 @@ export function useStudents(collectionName: 'students' | 'members' = 'students')
     }
 
     setLoading(true);
-    const applySnapshot = (snapshot: { docs: Array<{ id: string; data: () => unknown }> }) => {
+    const applySnapshot = (snapshot: { docs: Array<{ id: string; data: () => Record<string, unknown> }> }) => {
       const data = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Student))
         .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
