@@ -16,6 +16,7 @@ import { Pagination } from '../components/Pagination';
 import { useAuth } from '../lib/AuthContext';
 import { Phone } from 'lucide-react';
 import { useMemberRoleFilter } from '../lib/memberRoleFilter';
+import { PhoneNumberInput } from '../components/PhoneNumberInput';
 
 const PAGE_SIZE = 10;
 
@@ -190,65 +191,65 @@ export default function Students() {
               setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', email: '', memberRole: 'local', photoURL: '' });
             }}>Add {itemLabel}</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="flex max-h-[90vh] max-w-xl flex-col overflow-hidden">
             <DialogHeader>
               <DialogTitle>{editingStudent ? `Edit ${itemLabel}` : `Add New ${itemLabel}`}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-              <div className="space-y-2">
-                <Label>Full Name</Label>
-                <Input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Date of Birth</Label>
-                <Input type="date" required value={formData.dob} onChange={e => setFormData({ ...formData, dob: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Place</Label>
-                <Input required value={formData.place} onChange={e => setFormData({ ...formData, place: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>{isMembershipAdmin ? 'Phone Number' : 'Parent WhatsApp Number'}</Label>
-                <Input
-                  type="tel"
-                  required
-                  placeholder="+91"
-                  value={isMembershipAdmin ? formData.phoneNumber : formData.parentMobile}
-                  onChange={e => setFormData({ ...formData, [isMembershipAdmin ? 'phoneNumber' : 'parentMobile']: e.target.value })}
-                />
-              </div>
-              {isMembershipAdmin && (
-                <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input type="email" required placeholder="member@example.com" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4 pt-4">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                <div className="space-y-1.5">
+                  <Label>Full Name</Label>
+                  <Input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
                 </div>
-              )}
-              {isMembershipAdmin && (
-                <div className="space-y-2">
-                  <Label>Blood Group</Label>
-                  <Input required placeholder="e.g. O+" value={formData.bloodGroup} onChange={e => setFormData({ ...formData, bloodGroup: e.target.value })} />
+                <div className="space-y-1.5">
+                  <Label>Date of Birth</Label>
+                  <Input type="date" required value={formData.dob} onChange={e => setFormData({ ...formData, dob: e.target.value })} />
                 </div>
-              )}
-              {isMembershipAdmin && (
-                <div className="space-y-2">
-                  <Label>Role</Label>
-                  <Select value={formData.memberRole} onValueChange={(value) => setFormData({ ...formData, memberRole: value as MemberRole })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="local">Local</SelectItem>
-                      <SelectItem value="abroad">Abroad</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-1.5">
+                  <Label>Place</Label>
+                  <Input required value={formData.place} onChange={e => setFormData({ ...formData, place: e.target.value })} />
                 </div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="photoUpload">{itemLabel} Photo (Optional)</Label>
-                <Input id="photoUpload" type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)} />
+                <div className="space-y-1.5">
+                  <Label>{isMembershipAdmin ? 'Phone Number' : 'Parent WhatsApp Number'}</Label>
+                  <PhoneNumberInput
+                    required
+                    value={isMembershipAdmin ? formData.phoneNumber : formData.parentMobile}
+                    onChange={(value) => setFormData({ ...formData, [isMembershipAdmin ? 'phoneNumber' : 'parentMobile']: value })}
+                  />
+                </div>
+                {isMembershipAdmin && (
+                  <div className="space-y-1.5">
+                    <Label>Email</Label>
+                    <Input type="email" required placeholder="member@example.com" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                  </div>
+                )}
+                {isMembershipAdmin && (
+                  <div className="space-y-1.5">
+                    <Label>Blood Group</Label>
+                    <Input required placeholder="e.g. O+" value={formData.bloodGroup} onChange={e => setFormData({ ...formData, bloodGroup: e.target.value })} />
+                  </div>
+                )}
+                {isMembershipAdmin && (
+                  <div className="space-y-1.5">
+                    <Label>Role</Label>
+                    <Select value={formData.memberRole} onValueChange={(value) => setFormData({ ...formData, memberRole: value as MemberRole })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="local">Local</SelectItem>
+                        <SelectItem value="abroad">Abroad</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="photoUpload">{itemLabel} Photo (Optional)</Label>
+                  <Input id="photoUpload" type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)} />
+                </div>
+                {saveError && <p className="text-sm text-red-600">{saveError}</p>}
               </div>
-              {saveError && <p className="text-sm text-red-600">{saveError}</p>}
-              <Button type="submit" className="w-full" disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+              <Button type="submit" className="w-full shrink-0" disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
             </form>
           </DialogContent>
         </Dialog>

@@ -11,7 +11,7 @@ import { collection, doc, setDoc } from 'firebase/firestore';
 import { addMonths, format } from 'date-fns';
 import { Crown, Flame, MessageSquareWarning, MessageSquareShare } from 'lucide-react';
 import { Fee as FeeType, MemberRole } from '../types';
-import { sendWhatsAppMessage } from '../lib/whatsapp';
+import { sendWhatsAppMessage, WhatsAppTemplate } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { SearchInput } from '../components/SearchInput';
 import { Pagination } from '../components/Pagination';
@@ -324,12 +324,39 @@ export default function Fees() {
     return `Dear Parent, fees of this month (${formattedMonth}) for your ward ${studentName} has been received. Thank you.`;
   };
 
+  const getPaidTemplate = (studentName: string, monthStr: string): WhatsAppTemplate => {
+    const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
+    if (isMembershipAdmin) {
+      return {
+        name: 'membership_receipt',
+        bodyParams: [isAnnualFund ? 'annual' : 'monthly', formattedMonth, studentName],
+      };
+    }
+    return {
+      name: 'receipt_student',
+      bodyParams: [formattedMonth, studentName],
+    };
+  };
+
   const getWarningMessage = (studentName: string, monthStr: string) => {
     const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
     if (isMembershipAdmin) {
       return `Dear Member, this is a reminder that your ${isAnnualFund ? 'annual' : 'monthly'} fund for ${formattedMonth} is pending. Kindly pay at the earliest, ${studentName}.`;
     }
     return `Dear Parent, this is a reminder that fees for ${formattedMonth} for your ward ${studentName} is pending. Kindly pay at the earliest.`;
+  };
+
+  const getWarningTemplate = (studentName: string, monthStr: string): WhatsAppTemplate => {
+    const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
+    return {
+      name: 'warning',
+      bodyParams: [
+        isMembershipAdmin ? 'Member' : 'Parent',
+        studentName,
+        isMembershipAdmin ? `${isAnnualFund ? 'annual' : 'monthly'} fund` : 'fees',
+        formattedMonth,
+      ],
+    };
   };
 
   const getPartialPaymentMessage = (
@@ -344,6 +371,25 @@ export default function Fees() {
       return `Dear Member, for ${formattedMonth}, we received INR ${paidAmount.toFixed(2)} from ${studentName}. ${isAnnualFund ? 'Annual' : 'Monthly'} fund is INR ${expectedAmount.toFixed(2)}. Pending balance is INR ${balance.toFixed(2)}. Kindly clear the balance.`;
     }
     return `Dear Parent, for ${formattedMonth}, we received INR ${paidAmount.toFixed(2)} for your ward ${studentName}. Monthly fee is INR ${expectedAmount.toFixed(2)}. Pending balance is INR ${balance.toFixed(2)}. Kindly clear the balance.`;
+  };
+
+  const getPartialPaymentTemplate = (
+    studentName: string,
+    monthStr: string,
+    expectedAmount: number,
+    paidAmount: number,
+  ): WhatsAppTemplate => {
+    const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
+    const balance = Math.max(expectedAmount - paidAmount, 0);
+    return {
+      name: 'warning',
+      bodyParams: [
+        isMembershipAdmin ? 'Member' : 'Parent',
+        studentName,
+        `${isMembershipAdmin ? (isAnnualFund ? 'Annual fund' : 'Monthly fund') : 'Monthly fee'}: INR ${expectedAmount.toFixed(2)}, received: INR ${paidAmount.toFixed(2)}, balance: INR ${balance.toFixed(2)}`,
+        formattedMonth,
+      ],
+    };
   };
 
   const handleSendFeeMessage = async (
@@ -361,7 +407,13 @@ export default function Fees() {
           : messageType === 'partial' && meta
             ? getPartialPaymentMessage(studentName, fundPeriodKey, meta.expectedAmount, meta.paidAmount)
             : getWarningMessage(studentName, fundPeriodKey);
-      await sendWhatsAppMessage(mobile, message);
+      const template =
+        messageType === 'receipt'
+          ? getPaidTemplate(studentName, fundPeriodKey)
+          : messageType === 'partial' && meta
+            ? getPartialPaymentTemplate(studentName, fundPeriodKey, meta.expectedAmount, meta.paidAmount)
+            : getWarningTemplate(studentName, fundPeriodKey);
+      await sendWhatsAppMessage(mobile, message, template);
       const personLabel = isMembershipAdmin ? 'member' : 'parent';
       toast.success(
         messageType === 'receipt'
@@ -794,4 +846,3 @@ export default function Fees() {
     </div>
   );
 }
-

@@ -6,12 +6,21 @@ const port = Number(process.env.WHATSAPP_API_PORT || 8787);
 const whatsappAccessToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
 const whatsappApiVersion = process.env.WHATSAPP_API_VERSION || 'v23.0';
-const allowedOrigin = process.env.WHATSAPP_ALLOWED_ORIGIN || 'http://localhost:3000';
+const allowedOrigins = (process.env.WHATSAPP_ALLOWED_ORIGIN || 'http://localhost:3000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const defaultCountryCode = (process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || '91').replace(/[^0-9]/g, '');
+const defaultTemplateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE || 'en_US';
 
 app.use(express.json());
 
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', allowedOrigin);
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+  }
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
   if (req.method === 'OPTIONS') {
@@ -25,11 +34,70 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'whatsapp-api' });
 });
 
-app.post('/api/whatsapp/send', async (req, res) => {
-  const { to, message } = req.body as { to?: string; message?: string };
+function normalizeWhatsAppNumber(value: string) {
+  const input = value.trim();
+  if (!input) return '';
 
-  if (!to || !message) {
-    res.status(400).json({ error: 'Both "to" and "message" are required.' });
+  if (input.startsWith('+')) {
+    return input.replace(/[^0-9]/g, '');
+  }
+
+  if (input.startsWith('00')) {
+    return input.replace(/[^0-9]/g, '').replace(/^00/, '');
+  }
+
+  const digits = input.replace(/[^0-9]/g, '');
+  if (digits.length === 10 && defaultCountryCode) {
+    return `${defaultCountryCode}${digits}`;
+  }
+
+  if (digits.length === 11 && digits.startsWith('0') && defaultCountryCode) {
+    return `${defaultCountryCode}${digits.slice(1)}`;
+  }
+
+  return digits;
+}
+
+type WhatsAppTemplateRequest = {
+  name: string;
+  languageCode?: string;
+  bodyParams?: string[];
+};
+
+function buildTemplatePayload(cleanTo: string, template: WhatsAppTemplateRequest) {
+  return {
+    messaging_product: 'whatsapp',
+    to: cleanTo,
+    type: 'template',
+    template: {
+      name: template.name,
+      language: {
+        code: template.languageCode || defaultTemplateLanguage,
+      },
+      components: template.bodyParams?.length
+        ? [
+            {
+              type: 'body',
+              parameters: template.bodyParams.map((value) => ({
+                type: 'text',
+                text: String(value),
+              })),
+            },
+          ]
+        : undefined,
+    },
+  };
+}
+
+app.post('/api/whatsapp/send', async (req, res) => {
+  const { to, message, template } = req.body as {
+    to?: string;
+    message?: string;
+    template?: WhatsAppTemplateRequest;
+  };
+
+  if (!to || (!message && !template?.name)) {
+    res.status(400).json({ error: 'Both "to" and either "message" or "template.name" are required.' });
     return;
   }
 
@@ -38,9 +106,11 @@ app.post('/api/whatsapp/send', async (req, res) => {
     return;
   }
 
-  const cleanTo = String(to).replace(/[^0-9]/g, '');
-  if (!cleanTo) {
-    res.status(400).json({ error: 'Invalid recipient mobile number.' });
+  const cleanTo = normalizeWhatsAppNumber(String(to));
+  if (!/^[1-9][0-9]{7,14}$/.test(cleanTo)) {
+    res.status(400).json({
+      error: 'Invalid recipient mobile number. Use international format like +919876543210 or +971501234567.',
+    });
     return;
   }
 
@@ -53,14 +123,18 @@ app.post('/api/whatsapp/send', async (req, res) => {
         Authorization: `Bearer ${whatsappAccessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: cleanTo,
-        type: 'text',
-        text: {
-          body: String(message),
-        },
-      }),
+      body: JSON.stringify(
+        template?.name
+          ? buildTemplatePayload(cleanTo, template)
+          : {
+              messaging_product: 'whatsapp',
+              to: cleanTo,
+              type: 'text',
+              text: {
+                body: String(message),
+              },
+            },
+      ),
     });
 
     const data = await response.json();

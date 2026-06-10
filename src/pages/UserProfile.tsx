@@ -13,6 +13,7 @@ import { db, handleFirestoreError } from '../lib/firebase';
 import { uploadStudentPhotoToCloudinary } from '../lib/cloudinary';
 import { useCurrentMemberProfile } from '../lib/hooks';
 import { MemberRole } from '../types';
+import { PhoneNumberInput } from '../components/PhoneNumberInput';
 
 const PENDING_MEMBER_ROLE_KEY = 'sumjay.pendingMemberRole';
 
@@ -160,7 +161,12 @@ export default function UserProfile() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="phoneNumber">Phone Number</Label>
-              <Input id="phoneNumber" type="tel" required placeholder="+91" value={formData.phoneNumber} onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })} />
+              <PhoneNumberInput
+                id="phoneNumber"
+                required
+                value={formData.phoneNumber}
+                onChange={(value) => setFormData({ ...formData, phoneNumber: value })}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="bloodGroup">Blood Group</Label>

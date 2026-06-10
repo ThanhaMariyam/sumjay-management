@@ -85,10 +85,18 @@ export default function Attendance() {
     return `Dear Parent, your ward ${studentName} is absent today (${formattedDate}).`;
   };
 
+  const getAbsentTemplate = (studentName: string, dateStr: string) => ({
+    name: 'absence_notification',
+    bodyParams: [
+      studentName,
+      format(new Date(dateStr), 'MMM do, yyyy'),
+    ],
+  });
+
   const handleSendAbsentMessage = async (studentId: string, studentName: string, mobile: string) => {
     setSendingIds((prev) => ({ ...prev, [studentId]: true }));
     try {
-      await sendWhatsAppMessage(mobile, getAbsentMessage(studentName, date));
+      await sendWhatsAppMessage(mobile, getAbsentMessage(studentName, date), getAbsentTemplate(studentName, date));
       toast.success(`Absent notification sent to ${studentName}'s parent.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to send WhatsApp message.');
