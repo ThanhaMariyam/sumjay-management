@@ -27,7 +27,7 @@ service cloud.firestore {
         && data.place is string && data.place.size() <= 200
         && data.parentMobile is string && data.parentMobile.size() <= 20
         && data.createdAt is number
-        && (data.keys().hasAll(['photoURL']) ? (data.photoURL is string && data.photoURL.size() <= 500) : true)
+        && (data.keys().hasAll(['photoURL']) ? (data.photoURL is string && data.photoURL.size() <= 1000) : true)
         && (data.keys().hasAll(['updatedAt']) ? data.updatedAt is number : true);
     }
 
@@ -43,7 +43,7 @@ service cloud.firestore {
         && data.createdAt is number
         && (data.keys().hasAll(['userId']) ? (data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128) : true)
         && (data.keys().hasAll(['email']) ? (data.email is string && data.email.size() <= 200) : true)
-        && (data.keys().hasAll(['photoURL']) ? (data.photoURL is string && data.photoURL.size() <= 500) : true)
+        && (data.keys().hasAll(['photoURL']) ? (data.photoURL is string && data.photoURL.size() <= 1000) : true)
         && (data.keys().hasAll(['updatedAt']) ? data.updatedAt is number : true);
     }
 
@@ -104,7 +104,8 @@ service cloud.firestore {
                     && isValidMember(incoming())
                     && incoming().adminId == request.auth.uid;
       allow update: if isValidId(memberId)
-                    && (isAdmin(existing().adminId)
+                    && (isMembershipAdmin()
+                        || isAdmin(existing().adminId)
                         || (existing().keys().hasAll(['userId']) && existing().userId == request.auth.uid)
                         || (
                           !existing().keys().hasAll(['userId'])

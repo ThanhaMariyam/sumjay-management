@@ -78,6 +78,7 @@ export default function Students() {
     if (error instanceof Error && error.message === 'CLOUDINARY_UPLOAD_TIMEOUT') return 'Photo upload skipped: upload timed out.';
     if (error instanceof Error && error.message.startsWith('CLOUDINARY_UPLOAD_FAILED')) return 'Photo upload skipped.';
     if (error instanceof Error && error.message === 'CLOUDINARY_UPLOAD_NO_URL') return 'Photo upload skipped: Cloudinary did not return a URL.';
+    if (error instanceof TypeError) return 'Photo upload skipped: Cloudinary is unreachable.';
     return null;
   };
 
@@ -118,6 +119,7 @@ export default function Students() {
       if (editingStudent?.id) {
         await updateDoc(doc(db, collectionName, editingStudent.id), {
           ...payload,
+          createdAt: editingStudent.createdAt,
           updatedAt: Date.now(),
         });
       } else {
@@ -140,8 +142,13 @@ export default function Students() {
       setPhotoFile(null);
       setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', email: '', memberRole: 'local', photoURL: '' });
     } catch (error) {
-      setSaveError(`Failed to save ${itemLabel.toLowerCase()}. Please try again.`);
-      handleFirestoreError(error, 'write' as any, collectionName);
+      const message = error instanceof Error ? error.message : String(error);
+      setSaveError(`Failed to save ${itemLabel.toLowerCase()}: ${message}`);
+      try {
+        handleFirestoreError(error, 'write' as any, collectionName);
+      } catch (loggedError) {
+        console.error(loggedError);
+      }
     } finally {
       setSaving(false);
     }

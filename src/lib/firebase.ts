@@ -10,14 +10,12 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import { getFirestore, onSnapshot, collection, query, where, getDocs, doc, setDoc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
-import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 // CRITICAL: The app will break without specifying the database Id
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const storage = getStorage(app);
 
 export const googleProvider = new GoogleAuthProvider();
 
@@ -95,33 +93,6 @@ export const logout = async () => {
     console.error("Error logging out", error);
     throw error;
   }
-};
-
-const sanitizeFileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, '_');
-
-export const uploadStudentPhoto = async (file: File, adminId: string, timeoutMs = 30000) => {
-  const filePath = `students/${adminId}/${Date.now()}_${sanitizeFileName(file.name)}`;
-  const fileRef = ref(storage, filePath);
-
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error('PHOTO_UPLOAD_TIMEOUT')), timeoutMs);
-  });
-
-  try {
-    await Promise.race([
-      uploadBytes(fileRef, file, {
-        contentType: file.type || 'application/octet-stream',
-      }),
-      timeoutPromise,
-    ]);
-  } finally {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-  }
-
-  return getDownloadURL(fileRef);
 };
 
 enum OperationType {

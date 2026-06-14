@@ -1,14 +1,14 @@
 const CLOUDINARY_UPLOAD_TIMEOUT_MS = 30000;
-const CLOUDINARY_CLOUD_NAME = 'dsek6njs4';
-const CLOUDINARY_UPLOAD_PRESET = 'sumjay';
+const env = (import.meta.env as Record<string, string | undefined>) ?? {};
 
 const getCloudinaryConfig = () => ({
-  cloudName: CLOUDINARY_CLOUD_NAME.trim(),
-  uploadPreset: CLOUDINARY_UPLOAD_PRESET.trim(),
+  cloudName: (env.VITE_CLOUDINARY_CLOUD_NAME || '').trim(),
+  uploadPreset: (env.VITE_CLOUDINARY_UPLOAD_PRESET || '').trim(),
+  folder: (env.VITE_CLOUDINARY_UPLOAD_FOLDER || 'sumjay/students').trim(),
 });
 
 export async function uploadStudentPhotoToCloudinary(file: File) {
-  const { cloudName, uploadPreset } = getCloudinaryConfig();
+  const { cloudName, uploadPreset, folder } = getCloudinaryConfig();
   if (!cloudName || !uploadPreset) {
     throw new Error('MISSING_CLOUDINARY_CONFIG');
   }
@@ -17,7 +17,9 @@ export async function uploadStudentPhotoToCloudinary(file: File) {
   const body = new FormData();
   body.append('file', file);
   body.append('upload_preset', uploadPreset);
-  body.append('folder', 'sumjay/students');
+  if (folder) {
+    body.append('folder', folder);
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CLOUDINARY_UPLOAD_TIMEOUT_MS);

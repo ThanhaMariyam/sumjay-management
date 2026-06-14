@@ -1,10 +1,10 @@
 {
-  "projectId": "gen-lang-client-0630785645",
-  "appId": "1:670871744263:web:d2b2e514ee94ef24869fa2",
-  "apiKey": "AIzaSyBPv4MswjNOh3tmuoy5rrstNTpnknyjBrM",
-  "authDomain": "gen-lang-client-0630785645.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-21c76b3b-ea52-4067-91af-596eb825f4f3",
-  "storageBucket": "gen-lang-client-0630785645.firebasestorage.app",
-  "messagingSenderId": "670871744263",
-  "measurementId": ""
+  "projectId": "sumjay-production",
+  "appId": "1:820410557625:web:0bc85c87005b4faf226768",
+  "apiKey": "AIzaSyBBWMjFMjAqoRUWbUPANPMD4H5kk52CG9s",
+  "authDomain": "sumjay-production.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "sumjay-production.firebasestorage.app",
+  "messagingSenderId": "820410557625",
+  "measurementId": "G-WQH1TXKEY4"
 }
