@@ -11,7 +11,11 @@ const allowedOrigins = (process.env.WHATSAPP_ALLOWED_ORIGIN || 'http://localhost
   .map((origin) => origin.trim())
   .filter(Boolean);
 const defaultCountryCode = (process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || '91').replace(/[^0-9]/g, '');
-const defaultTemplateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE || 'en_US';
+const defaultTemplateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE || 'en';
+const allowedTemplates = (process.env.WHATSAPP_ALLOWED_TEMPLATES || '')
+  .split(',')
+  .map((templateName) => templateName.trim())
+  .filter(Boolean);
 
 app.use(express.json());
 
@@ -89,6 +93,10 @@ function buildTemplatePayload(cleanTo: string, template: WhatsAppTemplateRequest
   };
 }
 
+function isAllowedTemplate(templateName: string) {
+  return allowedTemplates.length === 0 || allowedTemplates.includes(templateName);
+}
+
 app.post('/api/whatsapp/send', async (req, res) => {
   const { to, message, template } = req.body as {
     to?: string;
@@ -106,6 +114,13 @@ app.post('/api/whatsapp/send', async (req, res) => {
     return;
   }
 
+  if (template?.name && !isAllowedTemplate(template.name)) {
+    res.status(400).json({
+      error: `WhatsApp template "${template.name}" is not enabled for this app. Enabled templates: ${allowedTemplates.join(', ') || 'all'}.`,
+    });
+    return;
+  }
+
   const cleanTo = normalizeWhatsAppNumber(String(to));
   if (!/^[1-9][0-9]{7,14}$/.test(cleanTo)) {
     res.status(400).json({
@@ -115,26 +130,32 @@ app.post('/api/whatsapp/send', async (req, res) => {
   }
 
   const endpoint = `https://graph.facebook.com/${whatsappApiVersion}/${whatsappPhoneNumberId}/messages`;
+  const outboundPayload = template?.name
+    ? buildTemplatePayload(cleanTo, template)
+    : {
+        messaging_product: 'whatsapp',
+        to: cleanTo,
+        type: 'text',
+        text: {
+          body: String(message),
+        },
+      };
 
   try {
+    if (template?.name) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `Sending WhatsApp template "${template.name}" (${template.languageCode || defaultTemplateLanguage}) with ${template.bodyParams?.length ?? 0} body params`,
+      );
+    }
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${whatsappAccessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(
-        template?.name
-          ? buildTemplatePayload(cleanTo, template)
-          : {
-              messaging_product: 'whatsapp',
-              to: cleanTo,
-              type: 'text',
-              text: {
-                body: String(message),
-              },
-            },
-      ),
+      body: JSON.stringify(outboundPayload),
     });
 
     const data = await response.json();

@@ -113,6 +113,16 @@ export default function Fees() {
       maximumFractionDigits: isMembershipAdmin ? 0 : 2,
     }).format(value);
 
+  const formatTemplateAmount = (value: number) =>
+    new Intl.NumberFormat('en-IN', {
+      maximumFractionDigits: 2,
+    }).format(value);
+
+  const formatTemplateDate = (dateValue?: string | null) => {
+    const safeDate = dateValue || format(new Date(), 'yyyy-MM-dd');
+    return format(new Date(`${safeDate}T00:00:00`), 'dd MMM yyyy');
+  };
+
   const formatMonthLabel = (monthValue?: string) =>
     monthValue ? format(new Date(`${monthValue}-01`), 'MMM yyyy') : '';
 
@@ -324,17 +334,18 @@ export default function Fees() {
     return `Dear Parent, fees of this month (${formattedMonth}) for your ward ${studentName} has been received. Thank you.`;
   };
 
-  const getPaidTemplate = (studentName: string, monthStr: string): WhatsAppTemplate => {
-    const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
+  const getPaidTemplate = (studentName: string, paidAmount: number, paidDate?: string | null): WhatsAppTemplate => {
     if (isMembershipAdmin) {
       return {
         name: 'membership_receipt',
-        bodyParams: [isAnnualFund ? 'annual' : 'monthly', formattedMonth, studentName],
+        languageCode: 'en',
+        bodyParams: [studentName, formatTemplateAmount(paidAmount), formatTemplateDate(paidDate)],
       };
     }
     return {
-      name: 'receipt_student',
-      bodyParams: [formattedMonth, studentName],
+      name: 'student_receipt',
+      languageCode: 'en',
+      bodyParams: [studentName, formatTemplateAmount(paidAmount), formatTemplateDate(paidDate)],
     };
   };
 
@@ -347,15 +358,11 @@ export default function Fees() {
   };
 
   const getWarningTemplate = (studentName: string, monthStr: string): WhatsAppTemplate => {
-    const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
+    void monthStr;
     return {
       name: 'warning',
-      bodyParams: [
-        isMembershipAdmin ? 'Member' : 'Parent',
-        studentName,
-        isMembershipAdmin ? `${isAnnualFund ? 'annual' : 'monthly'} fund` : 'fees',
-        formattedMonth,
-      ],
+      languageCode: 'en',
+      bodyParams: [studentName],
     };
   };
 
@@ -379,16 +386,13 @@ export default function Fees() {
     expectedAmount: number,
     paidAmount: number,
   ): WhatsAppTemplate => {
-    const formattedMonth = isAnnualFund ? fundYear : format(new Date(monthStr + '-01'), 'MMMM yyyy');
-    const balance = Math.max(expectedAmount - paidAmount, 0);
+    void monthStr;
+    void expectedAmount;
+    void paidAmount;
     return {
       name: 'warning',
-      bodyParams: [
-        isMembershipAdmin ? 'Member' : 'Parent',
-        studentName,
-        `${isMembershipAdmin ? (isAnnualFund ? 'Annual fund' : 'Monthly fund') : 'Monthly fee'}: INR ${expectedAmount.toFixed(2)}, received: INR ${paidAmount.toFixed(2)}, balance: INR ${balance.toFixed(2)}`,
-        formattedMonth,
-      ],
+      languageCode: 'en',
+      bodyParams: [studentName],
     };
   };
 
@@ -397,20 +401,25 @@ export default function Fees() {
     studentName: string,
     mobile: string,
     messageType: 'receipt' | 'overdue' | 'partial',
-    meta?: { expectedAmount: number; paidAmount: number },
+    meta?: {
+      expectedAmount?: number;
+      paidAmount?: number;
+      receiptAmount?: number;
+      receiptDate?: string | null;
+    },
   ) => {
     setSendingIds((prev) => ({ ...prev, [studentId]: true }));
     try {
       const message =
         messageType === 'receipt'
           ? getPaidMessage(studentName, fundPeriodKey)
-          : messageType === 'partial' && meta
+          : messageType === 'partial' && typeof meta?.expectedAmount === 'number' && typeof meta.paidAmount === 'number'
             ? getPartialPaymentMessage(studentName, fundPeriodKey, meta.expectedAmount, meta.paidAmount)
             : getWarningMessage(studentName, fundPeriodKey);
       const template =
         messageType === 'receipt'
-          ? getPaidTemplate(studentName, fundPeriodKey)
-          : messageType === 'partial' && meta
+          ? getPaidTemplate(studentName, meta?.receiptAmount ?? getStudentAmount(studentId), meta?.receiptDate)
+          : messageType === 'partial' && typeof meta?.expectedAmount === 'number' && typeof meta.paidAmount === 'number'
             ? getPartialPaymentTemplate(studentName, fundPeriodKey, meta.expectedAmount, meta.paidAmount)
             : getWarningTemplate(studentName, fundPeriodKey);
       await sendWhatsAppMessage(mobile, message, template);
@@ -690,7 +699,13 @@ export default function Fees() {
                           size="sm"
                           className="text-green-600 hover:text-green-700 hover:bg-green-50"
                           disabled={!!sendingIds[student.id!]}
-                          onClick={() => handleSendFeeMessage(student.id!, student.name, isMembershipAdmin ? (student.phoneNumber || '') : student.parentMobile, 'receipt')}
+                          onClick={() => handleSendFeeMessage(
+                            student.id!,
+                            student.name,
+                            isMembershipAdmin ? (student.phoneNumber || '') : student.parentMobile,
+                            'receipt',
+                            { receiptAmount: paidAmount, receiptDate: record?.paidOn },
+                          )}
                         >
                           <MessageSquareShare className="w-4 h-4 mr-2" />
                           {sendingIds[student.id!] ? 'Sending...' : 'Receipt'}

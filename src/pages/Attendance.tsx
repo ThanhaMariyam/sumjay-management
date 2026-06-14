@@ -86,7 +86,8 @@ export default function Attendance() {
   };
 
   const getAbsentTemplate = (studentName: string, dateStr: string) => ({
-    name: 'absence_notification',
+    name: 'absence_notify',
+    languageCode: 'en',
     bodyParams: [
       studentName,
       format(new Date(dateStr), 'MMM do, yyyy'),
