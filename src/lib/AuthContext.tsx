@@ -23,23 +23,35 @@ const normalizeAdminEmail = (identifier: string) => {
   return cleaned.includes('@') ? cleaned : `${cleaned}@sumjay.club`;
 };
 
+const getConfiguredAdmins = () => {
+  const studentUser = normalizeEnvValue(import.meta.env.VITE_STUDENT_ADMIN_USERNAME, 'student_admin').toLowerCase();
+  const membershipUser = normalizeEnvValue(import.meta.env.VITE_MEMBERSHIP_ADMIN_USERNAME, 'membership_admin').toLowerCase();
+
+  return [
+    { username: studentUser, email: normalizeAdminEmail(studentUser), role: 'student' as UserRole },
+    { username: membershipUser, email: normalizeAdminEmail(membershipUser), role: 'membership' as UserRole },
+  ];
+};
+
 const getConfiguredAdminByEmail = (email?: string | null): { username: string; role: UserRole } | null => {
   if (!email) return null;
 
   const normalizedEmail = email.trim().toLowerCase();
-  const studentUser = normalizeEnvValue(import.meta.env.VITE_STUDENT_ADMIN_USERNAME, 'student_admin').toLowerCase();
-  const membershipUser = normalizeEnvValue(import.meta.env.VITE_MEMBERSHIP_ADMIN_USERNAME, 'membership_admin').toLowerCase();
-
-  if (normalizedEmail === normalizeAdminEmail(studentUser)) {
-    return { username: studentUser, role: 'student' };
-  }
-
-  if (normalizedEmail === normalizeAdminEmail(membershipUser)) {
-    return { username: membershipUser, role: 'membership' };
-  }
-
-  return null;
+  const configuredAdmin = getConfiguredAdmins().find((admin) => normalizedEmail === admin.email);
+  return configuredAdmin ? { username: configuredAdmin.username, role: configuredAdmin.role } : null;
 };
+
+const getConfiguredAdminByIdentifier = (identifier: string): { username: string; role: UserRole } | null => {
+  const normalizedIdentifier = identifier.trim().toLowerCase();
+  const normalizedEmail = normalizeAdminEmail(normalizedIdentifier);
+  const configuredAdmin = getConfiguredAdmins().find(
+    (admin) => normalizedIdentifier === admin.username || normalizedEmail === admin.email,
+  );
+  return configuredAdmin ? { username: configuredAdmin.username, role: configuredAdmin.role } : null;
+};
+
+const isGoogleAuthUser = (firebaseUser: typeof auth.currentUser) =>
+  !!firebaseUser?.providerData.some((provider) => provider.providerId === 'google.com');
 
 interface AuthContextType {
   user: SessionUser | null;
@@ -94,7 +106,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (firebaseUser) {
         const configuredAdmin = getConfiguredAdminByEmail(firebaseUser.email);
-        if (configuredAdmin) {
+        if (configuredAdmin && !isGoogleAuthUser(firebaseUser)) {
           const nextUser = {
             username: configuredAdmin.username,
             role: configuredAdmin.role,
@@ -124,25 +136,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const login = async (username: string, password: string) => {
-    const studentUser = normalizeEnvValue(import.meta.env.VITE_STUDENT_ADMIN_USERNAME, 'student_admin').toLowerCase();
     const studentPass = normalizeEnvValue(import.meta.env.VITE_STUDENT_ADMIN_PASSWORD, 'student_password');
-    const membershipUser = normalizeEnvValue(import.meta.env.VITE_MEMBERSHIP_ADMIN_USERNAME, 'membership_admin').toLowerCase();
     const membershipPass = normalizeEnvValue(import.meta.env.VITE_MEMBERSHIP_ADMIN_PASSWORD, 'membership_password');
 
-    const normalizedUsername = username.trim().toLowerCase();
     const normalizedPassword = password.trim();
+    const configuredAdmin = getConfiguredAdminByIdentifier(username);
 
-    if (normalizedUsername === studentUser && normalizedPassword === studentPass) {
-      const result = await loginWithCredentials(normalizedUsername, normalizedPassword);
-      const nextUser = { username: normalizedUsername, role: 'student' as UserRole, adminId: result.user.uid, email: result.user.email || undefined };
+    if (configuredAdmin?.role === 'student' && normalizedPassword === studentPass) {
+      const result = await loginWithCredentials(configuredAdmin.username, normalizedPassword);
+      const nextUser = { username: configuredAdmin.username, role: 'student' as UserRole, adminId: result.user.uid, email: result.user.email || undefined };
       setUser(nextUser);
       sessionStorage.setItem('sumjay_admin_session', JSON.stringify(nextUser));
       return true;
     }
 
-    if (normalizedUsername === membershipUser && normalizedPassword === membershipPass) {
-      const result = await loginWithCredentials(normalizedUsername, normalizedPassword);
-      const nextUser = { username: normalizedUsername, role: 'membership' as UserRole, adminId: result.user.uid, email: result.user.email || undefined };
+    if (configuredAdmin?.role === 'membership' && normalizedPassword === membershipPass) {
+      const result = await loginWithCredentials(configuredAdmin.username, normalizedPassword);
+      const nextUser = { username: configuredAdmin.username, role: 'membership' as UserRole, adminId: result.user.uid, email: result.user.email || undefined };
       setUser(nextUser);
       sessionStorage.setItem('sumjay_admin_session', JSON.stringify(nextUser));
       return true;
@@ -151,10 +161,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return false;
   };
 
-  const setMemberSession = (firebaseUser: typeof auth.currentUser) => {
+  const setMemberSession = (firebaseUser: typeof auth.currentUser, forceMember = false) => {
     if (!firebaseUser) return false;
     const configuredAdmin = getConfiguredAdminByEmail(firebaseUser.email);
-    if (configuredAdmin) {
+    if (configuredAdmin && !forceMember) {
       const nextUser = {
         username: configuredAdmin.username,
         role: configuredAdmin.role,
@@ -179,18 +189,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const loginMember = async (email: string, password: string) => {
+    if (getConfiguredAdminByEmail(email)) {
+      throw new Error('Use the configured admin password to login.');
+    }
     const result = await loginUserWithCredentials(email, password);
     return setMemberSession(result.user);
   };
 
   const signupMember = async (email: string, password: string, displayName?: string) => {
+    if (getConfiguredAdminByEmail(email)) {
+      throw new Error('Admin accounts cannot be created from signup.');
+    }
     const result = await signupUserWithCredentials(email, password, displayName);
     return setMemberSession(result.user);
   };
 
   const loginMemberWithGoogle = async () => {
     const result = await loginWithGoogle();
-    return setMemberSession(result?.user || auth.currentUser);
+    return setMemberSession(result?.user || auth.currentUser, true);
   };
 
   const logout = async () => {

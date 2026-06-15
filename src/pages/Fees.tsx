@@ -21,7 +21,49 @@ import { useMemberRoleFilter } from '../lib/memberRoleFilter';
 const DEFAULT_FEE_AMOUNT = 1000;
 const DEFAULT_FUND_AMOUNT = 100;
 const DEFAULT_ANNUAL_FUND_AMOUNT = DEFAULT_FUND_AMOUNT * 12;
+const DEFAULT_AMOUNT_STORAGE_KEY = 'sumjay.defaultAmounts';
 const PAGE_SIZE = 10;
+
+type DefaultAmountKey = 'student' | 'memberLocal' | 'memberAbroad';
+
+const defaultAmountFallbacks: Record<DefaultAmountKey, number> = {
+  student: DEFAULT_FEE_AMOUNT,
+  memberLocal: DEFAULT_FUND_AMOUNT,
+  memberAbroad: DEFAULT_ANNUAL_FUND_AMOUNT,
+};
+
+const getDefaultAmountKey = (isMembershipAdmin: boolean, memberRoleFilter: MemberRole): DefaultAmountKey => {
+  if (!isMembershipAdmin) return 'student';
+  return memberRoleFilter === 'abroad' ? 'memberAbroad' : 'memberLocal';
+};
+
+const readStoredDefaultAmounts = (): Partial<Record<DefaultAmountKey, string>> => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(DEFAULT_AMOUNT_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const getStoredDefaultAmount = (key: DefaultAmountKey) => {
+  const storedValue = readStoredDefaultAmounts()[key];
+  return typeof storedValue === 'string' && storedValue.trim()
+    ? storedValue
+    : String(defaultAmountFallbacks[key]);
+};
+
+const saveStoredDefaultAmount = (key: DefaultAmountKey, value: string) => {
+  if (typeof window === 'undefined') return;
+  const nextDefaults = {
+    ...readStoredDefaultAmounts(),
+    [key]: value,
+  };
+  window.localStorage.setItem(DEFAULT_AMOUNT_STORAGE_KEY, JSON.stringify(nextDefaults));
+};
 
 export default function Fees() {
   const { user, isMembershipAdmin } = useAuth();
@@ -30,25 +72,28 @@ export default function Fees() {
   const contactLabel = isMembershipAdmin ? 'Phone' : 'Parent Mobile';
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [fundYear, setFundYear] = useState(format(new Date(), 'yyyy'));
-  const [defaultAmount, setDefaultAmount] = useState(String(isMembershipAdmin ? DEFAULT_FUND_AMOUNT : DEFAULT_FEE_AMOUNT));
+  const { memberRoleFilter, setMemberRoleFilter } = useMemberRoleFilter();
+  const defaultAmountKey = getDefaultAmountKey(isMembershipAdmin, memberRoleFilter);
+  const [defaultAmount, setDefaultAmount] = useState(() => getStoredDefaultAmount(defaultAmountKey));
   const { fees, loading: feesLoading } = useFees();
   const [sendingIds, setSendingIds] = useState<Record<string, boolean>>({});
+  const [sentMessageIds, setSentMessageIds] = useState<Record<string, boolean>>({});
   const [paidDialogOpen, setPaidDialogOpen] = useState(false);
   const [dueDialogOpen, setDueDialogOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [paymentAmountInput, setPaymentAmountInput] = useState('');
   const [paymentDialogMode, setPaymentDialogMode] = useState<'paid' | 'partial'>('partial');
   const [searchTerm, setSearchTerm] = useState('');
-  const { memberRoleFilter, setMemberRoleFilter } = useMemberRoleFilter();
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    setDefaultAmount(String(
-      isMembershipAdmin
-        ? (memberRoleFilter === 'abroad' ? DEFAULT_ANNUAL_FUND_AMOUNT : DEFAULT_FUND_AMOUNT)
-        : DEFAULT_FEE_AMOUNT,
-    ));
-  }, [isMembershipAdmin, memberRoleFilter]);
+    setDefaultAmount(getStoredDefaultAmount(defaultAmountKey));
+  }, [defaultAmountKey]);
+
+  const handleDefaultAmountChange = (value: string) => {
+    setDefaultAmount(value);
+    saveStoredDefaultAmount(defaultAmountKey, value);
+  };
 
   const isAnnualFund = isMembershipAdmin && memberRoleFilter === 'abroad';
   const fundPeriodKey = isAnnualFund ? `${fundYear}-01` : month;
@@ -408,6 +453,7 @@ export default function Fees() {
       receiptDate?: string | null;
     },
   ) => {
+    const sendKey = `${studentId}:${messageType}:${fundPeriodKey}`;
     setSendingIds((prev) => ({ ...prev, [studentId]: true }));
     try {
       const message =
@@ -423,6 +469,7 @@ export default function Fees() {
             ? getPartialPaymentTemplate(studentName, fundPeriodKey, meta.expectedAmount, meta.paidAmount)
             : getWarningTemplate(studentName, fundPeriodKey);
       await sendWhatsAppMessage(mobile, message, template);
+      setSentMessageIds((prev) => ({ ...prev, [sendKey]: true }));
       const personLabel = isMembershipAdmin ? 'member' : 'parent';
       toast.success(
         messageType === 'receipt'
@@ -537,7 +584,7 @@ export default function Fees() {
             min={0}
             step="0.01"
             value={defaultAmount}
-            onChange={(e) => setDefaultAmount(e.target.value)}
+            onChange={(e) => handleDefaultAmountChange(e.target.value)}
             className="w-36"
           />
           {isMembershipAdmin && (
@@ -615,6 +662,9 @@ export default function Fees() {
                 const localFundSummary = isLocalFund ? getLocalFundSummary(student.id!) : null;
                 // Show warning as soon as a row is marked unpaid (or no payment exists yet).
                 const isOverdue = !record || record.status === 'unpaid';
+                const receiptSent = !!sentMessageIds[`${student.id!}:receipt:${fundPeriodKey}`];
+                const warningType = hasPaidMismatch ? 'partial' : 'overdue';
+                const warningSent = !!sentMessageIds[`${student.id!}:${warningType}:${fundPeriodKey}`];
 
                 return (
                   <TableRow key={student.id}>
@@ -697,8 +747,8 @@ export default function Fees() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                          disabled={!!sendingIds[student.id!]}
+                          className={receiptSent ? 'text-gray-500 bg-gray-50' : 'text-green-600 hover:text-green-700 hover:bg-green-50'}
+                          disabled={!!sendingIds[student.id!] || receiptSent}
                           onClick={() => handleSendFeeMessage(
                             student.id!,
                             student.name,
@@ -708,25 +758,25 @@ export default function Fees() {
                           )}
                         >
                           <MessageSquareShare className="w-4 h-4 mr-2" />
-                          {sendingIds[student.id!] ? 'Sending...' : 'Receipt'}
+                          {sendingIds[student.id!] ? 'Sending...' : receiptSent ? 'Sent' : 'Receipt'}
                         </Button>
                       )}
                       {(hasPaidMismatch || ((record?.status === 'unpaid' || !record) && isOverdue)) && (
                         <Button
                           variant="outline"
                           size="sm"
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          disabled={!!sendingIds[student.id!]}
+                          className={warningSent ? 'text-gray-500 bg-gray-50' : 'text-red-600 hover:text-red-700 hover:bg-red-50'}
+                          disabled={!!sendingIds[student.id!] || warningSent}
                           onClick={() => handleSendFeeMessage(
                             student.id!,
                             student.name,
                             isMembershipAdmin ? (student.phoneNumber || '') : student.parentMobile,
-                            hasPaidMismatch ? 'partial' : 'overdue',
+                            warningType,
                             hasPaidMismatch ? { expectedAmount: feeAmount, paidAmount } : undefined,
                           )}
                         >
                           <MessageSquareWarning className="w-4 h-4 mr-2" />
-                          {sendingIds[student.id!] ? 'Sending...' : hasPaidMismatch ? 'Payment Warning' : 'Overdue Warning'}
+                          {sendingIds[student.id!] ? 'Sending...' : warningSent ? 'Sent' : hasPaidMismatch ? 'Payment Warning' : 'Overdue Warning'}
                         </Button>
                       )}
                     </TableCell>

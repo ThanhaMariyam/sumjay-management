@@ -7,7 +7,6 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import AppLayout from './components/AppLayout';
-import Login from './components/Login';
 import UserAuth from './components/UserAuth';
 import UserLayout from './components/UserLayout';
 import Dashboard from './pages/Dashboard';
@@ -49,7 +48,7 @@ function RouteTransition() {
         className="h-full"
       >
         <Routes location={location}>
-          <Route path="/login" element={user ? <Navigate to={isMemberUser ? '/user' : '/'} replace /> : <Login />} />
+          <Route path="/login" element={<UserAuth mode="login" />} />
           <Route path="/user/login" element={<UserAuth mode="login" />} />
           <Route path="/user/signup" element={<UserAuth mode="signup" />} />
           <Route path="/" element={<AdminRoute><AppLayout /></AdminRoute>}>

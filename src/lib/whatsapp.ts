@@ -1,5 +1,5 @@
 const env = (import.meta.env as Record<string, string | undefined>) ?? {};
-const apiBaseUrl = (env.VITE_WHATSAPP_API_BASE_URL || 'http://localhost:8787').replace(/\/$/, '');
+const apiBaseUrl = (env.VITE_WHATSAPP_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '')).replace(/\/$/, '');
 const isLocalApi = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/.test(apiBaseUrl);
 
 export interface WhatsAppTemplate {
@@ -29,7 +29,7 @@ export async function sendWhatsAppMessage(to: string, message: string, template?
     const hint = isLocalApi
       ? ' Start API server with "npm run dev:api".'
       : ' Check the production WhatsApp API URL and server health.';
-    throw new Error(`WhatsApp service is unreachable at ${apiBaseUrl}.${hint}`);
+    throw new Error(`WhatsApp service is unreachable at ${apiBaseUrl || 'this site'}.${hint}`);
   } finally {
     clearTimeout(timeoutId);
   }

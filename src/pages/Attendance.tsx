@@ -24,6 +24,7 @@ export default function Attendance() {
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const { attendance, loading: attendanceLoading } = useAttendance();
   const [sendingIds, setSendingIds] = useState<Record<string, boolean>>({});
+  const [sentMessageIds, setSentMessageIds] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -95,9 +96,11 @@ export default function Attendance() {
   });
 
   const handleSendAbsentMessage = async (studentId: string, studentName: string, mobile: string) => {
+    const sendKey = `${studentId}:${date}`;
     setSendingIds((prev) => ({ ...prev, [studentId]: true }));
     try {
       await sendWhatsAppMessage(mobile, getAbsentMessage(studentName, date), getAbsentTemplate(studentName, date));
+      setSentMessageIds((prev) => ({ ...prev, [sendKey]: true }));
       toast.success(`Absent notification sent to ${studentName}'s parent.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to send WhatsApp message.');
@@ -147,6 +150,7 @@ export default function Attendance() {
             ) : (
               paginatedStudents.map(student => {
                 const record = attendanceMap[student.id!];
+                const messageSent = !!sentMessageIds[`${student.id!}:${date}`];
                 return (
                   <TableRow key={student.id}>
                     <TableCell>
@@ -186,12 +190,12 @@ export default function Attendance() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                          disabled={!!sendingIds[student.id!]}
+                          className={messageSent ? 'text-gray-500 bg-gray-50' : 'text-green-600 hover:text-green-700 hover:bg-green-50'}
+                          disabled={!!sendingIds[student.id!] || messageSent}
                           onClick={() => handleSendAbsentMessage(student.id!, student.name, student.parentMobile)}
                         >
                           <MessageSquareWarning className="w-4 h-4 mr-2" />
-                          {sendingIds[student.id!] ? 'Sending...' : 'Notify'}
+                          {sendingIds[student.id!] ? 'Sending...' : messageSent ? 'Sent' : 'Notify'}
                         </Button>
                       )}
                     </TableCell>
