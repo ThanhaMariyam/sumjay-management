@@ -34,10 +34,19 @@ export async function sendWhatsAppMessage(to: string, message: string, template?
     clearTimeout(timeoutId);
   }
 
-  const payload = await response.json().catch(() => ({}));
+  const responseText = await response.text().catch(() => '');
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    payload = {};
+  }
 
   if (!response.ok) {
-    const errorText = payload?.error || 'Failed to send WhatsApp message.';
+    const rawError = typeof payload.error === 'string'
+      ? payload.error
+      : responseText.trim();
+    const errorText = rawError || `WhatsApp request failed with HTTP ${response.status}.`;
     throw new Error(errorText);
   }
 
