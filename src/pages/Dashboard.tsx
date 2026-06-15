@@ -136,20 +136,20 @@ export default function Dashboard() {
   }, [activePeople, monthFeeMap, isMembershipAdmin]);
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto">
+    <div className="w-full max-w-6xl mx-auto space-y-6 md:space-y-8">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
         <h1 className="text-3xl font-bold tracking-tight text-primary">Dashboard</h1>
         <p className="text-gray-500">{isMembershipAdmin ? 'Overview of membership data.' : 'Overview of Sumjay Football Camp student activity.'}</p>
         </div>
-        <div className="flex items-stretch gap-2 self-start md:self-auto">
-          <div className="rounded-md border bg-white px-4 py-2 text-sm text-gray-700 shadow-sm min-w-[250px]">
+        <div className="flex w-full flex-col items-stretch gap-2 md:w-auto md:flex-row md:self-auto">
+          <div className="rounded-md border bg-white px-4 py-2 text-sm text-gray-700 shadow-sm md:min-w-[250px]">
             <p className="font-medium">{format(now, 'EEEE, dd MMMM yyyy')}</p>
             <p className="text-xs text-gray-500">{format(now, 'hh:mm:ss a')}</p>
           </div>
           {isMembershipAdmin && (
             <Select value={memberRoleFilter} onValueChange={(value) => setMemberRoleFilter(value as MemberRole)}>
-              <SelectTrigger className="w-40 bg-white shadow-sm">
+              <SelectTrigger className="w-full bg-white shadow-sm md:w-40">
                 <SelectValue placeholder="Filter role" />
               </SelectTrigger>
               <SelectContent>
@@ -161,7 +161,7 @@ export default function Dashboard() {
           <Button
             type="button"
             onClick={() => setDueDialogOpen(true)}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 md:w-auto"
           >
             Due {isMembershipAdmin ? 'Members' : 'Students'}
           </Button>
@@ -250,7 +250,7 @@ export default function Dashboard() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="mt-1 flex items-center justify-center gap-3 text-[11px]">
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px]">
               {attendanceChartData.map((entry) => (
                 <span key={entry.name} className="inline-flex items-center gap-1 text-gray-600">
                   <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: entry.color }} />
@@ -279,7 +279,7 @@ export default function Dashboard() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="mt-1 flex items-center justify-center gap-3 text-[11px]">
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px]">
               {feesChartData.map((entry) => (
                 <span key={entry.name} className="inline-flex items-center gap-1 text-gray-600">
                   <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: entry.color }} />

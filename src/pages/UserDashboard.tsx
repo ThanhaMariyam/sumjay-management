@@ -106,7 +106,7 @@ export default function UserDashboard() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="w-full max-w-5xl mx-auto space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-primary">Dashboard</h1>
@@ -127,7 +127,7 @@ export default function UserDashboard() {
             </Avatar>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{member.name}</div>
+            <div className="break-words text-2xl font-bold">{member.name}</div>
             <p className="text-xs text-muted-foreground">{member.phoneNumber}</p>
           </CardContent>
         </Card>
@@ -138,7 +138,7 @@ export default function UserDashboard() {
             <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-700">{feesLoading ? '...' : formatAmount(paidAmount)}</div>
+            <div className="break-words text-2xl font-bold text-green-700">{feesLoading ? '...' : formatAmount(paidAmount)}</div>
             <p className="text-xs text-muted-foreground">{currentPeriodLabel}</p>
           </CardContent>
         </Card>
@@ -149,7 +149,7 @@ export default function UserDashboard() {
             <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-700">{feesLoading ? '...' : formatAmount(balanceAmount)}</div>
+            <div className="break-words text-2xl font-bold text-orange-700">{feesLoading ? '...' : formatAmount(balanceAmount)}</div>
             <p className="text-xs text-muted-foreground">{isAbroadMember ? 'Yearly fund status' : 'Monthly fund status'}</p>
           </CardContent>
         </Card>
@@ -165,7 +165,7 @@ export default function UserDashboard() {
             <AvatarImage src={member.photoURL} />
             <AvatarFallback className="text-3xl">{member.name.charAt(0).toUpperCase()}</AvatarFallback>
           </Avatar>
-          <div className="grid flex-1 gap-3 text-sm md:grid-cols-2">
+          <div className="grid min-w-0 flex-1 gap-3 text-sm md:grid-cols-2">
             <p><span className="font-medium text-gray-700">Date of Birth:</span> {member.dob}</p>
             <p><span className="font-medium text-gray-700">Email:</span> {member.email || '-'}</p>
             <p><span className="font-medium text-gray-700">Place:</span> {member.place}</p>

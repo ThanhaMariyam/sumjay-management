@@ -49,7 +49,7 @@ export function Pagination({
       <p className="text-sm text-gray-500">
         Showing {rangeStart}-{rangeEnd} of {totalItems}
       </p>
-      <div className="flex items-center gap-1">
+      <div className="flex max-w-full items-center gap-1 overflow-x-auto pb-1">
         <Button
           variant="outline"
           size="sm"

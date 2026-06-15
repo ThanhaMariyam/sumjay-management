@@ -325,16 +325,16 @@ export default function Reports() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="w-full max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-primary">Reports</h1>
         <p className="text-gray-500">{isMembershipAdmin ? 'Download membership fees reports as CSV or PDF.' : 'Download attendance and fees reports as CSV or PDF.'}</p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-lg border shadow-sm">
-        <label className="text-sm font-medium text-gray-700">Filter By:</label>
+      <div className="grid grid-cols-1 gap-3 bg-white p-4 rounded-lg border shadow-sm sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center">
+        <label className="text-sm font-medium text-gray-700 sm:sr-only lg:not-sr-only">Filter By:</label>
         <Select value={filterType} onValueChange={(value) => setFilterType(value as FilterType)}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-full lg:w-[180px]">
             <SelectValue placeholder="Select filter" />
           </SelectTrigger>
           <SelectContent>
@@ -346,9 +346,9 @@ export default function Reports() {
         </Select>
         {isMembershipAdmin && (
           <>
-            <label className="text-sm font-medium text-gray-700">Role:</label>
+            <label className="text-sm font-medium text-gray-700 sm:sr-only lg:not-sr-only">Role:</label>
             <Select value={memberRoleFilter} onValueChange={(value) => setMemberRoleFilter(value as MemberRole)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full lg:w-[180px]">
                 <SelectValue placeholder="Filter role" />
               </SelectTrigger>
               <SelectContent>

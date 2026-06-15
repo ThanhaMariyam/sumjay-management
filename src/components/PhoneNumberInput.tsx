@@ -48,7 +48,7 @@ export function PhoneNumberInput({ id, value, onChange, required }: PhoneNumberI
   };
 
   return (
-    <div className="flex gap-2">
+    <div className="flex min-w-0 gap-2">
       <Select value={countryCode} onValueChange={(nextCountryCode) => emitValue(nextCountryCode, nationalNumber)}>
         <SelectTrigger className="w-36 bg-white">
           <SelectValue placeholder="+91" />
@@ -69,6 +69,7 @@ export function PhoneNumberInput({ id, value, onChange, required }: PhoneNumberI
         placeholder="Enter your phone number"
         value={nationalNumber}
         onChange={(event) => emitValue(countryCode, event.target.value)}
+        className="min-w-0"
       />
     </div>
   );

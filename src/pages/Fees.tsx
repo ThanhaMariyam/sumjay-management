@@ -552,14 +552,14 @@ export default function Fees() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex justify-between items-center bg-white p-4 rounded-lg border shadow-sm">
+    <div className="w-full max-w-5xl mx-auto space-y-6">
+      <div className="flex flex-col gap-4 bg-white p-4 rounded-lg border shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-primary">{isMembershipAdmin ? 'Fund Record' : 'Fees Record'}</h1>
           <p className="text-gray-500 text-sm">Manage {isAnnualFund ? 'yearly fund' : `monthly ${isMembershipAdmin ? 'fund' : 'fees'}`}, amount and balance</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap justify-end">
-          <label className="text-sm font-medium text-gray-700">{isAnnualFund ? 'Year:' : 'Month:'}</label>
+        <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:w-auto lg:flex lg:flex-wrap lg:items-center lg:justify-end">
+          <label className="self-end text-sm font-medium text-gray-700 sm:sr-only lg:not-sr-only">{isAnnualFund ? 'Year:' : 'Month:'}</label>
           {isAnnualFund ? (
             <Input
               type="number"
@@ -568,30 +568,30 @@ export default function Fees() {
               step={1}
               value={fundYear}
               onChange={(e) => setFundYear(e.target.value)}
-              className="w-28"
+              className="w-full lg:w-28"
             />
           ) : (
             <Input
               type="month"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              className="w-auto"
+              className="w-full lg:w-auto"
             />
           )}
-          <label className="text-sm font-medium text-gray-700">Default Amount:</label>
+          <label className="self-end text-sm font-medium text-gray-700 sm:sr-only lg:not-sr-only">Default Amount:</label>
           <Input
             type="number"
             min={0}
             step="0.01"
             value={defaultAmount}
             onChange={(e) => handleDefaultAmountChange(e.target.value)}
-            className="w-36"
+            className="w-full lg:w-36"
           />
           {isMembershipAdmin && (
             <>
-              <label className="text-sm font-medium text-gray-700">Role:</label>
+              <label className="self-end text-sm font-medium text-gray-700 sm:sr-only lg:not-sr-only">Role:</label>
               <Select value={memberRoleFilter} onValueChange={(value) => setMemberRoleFilter(value as MemberRole)}>
-                <SelectTrigger className="w-36 bg-white">
+                <SelectTrigger className="w-full bg-white lg:w-36">
                   <SelectValue placeholder="Filter role" />
                 </SelectTrigger>
                 <SelectContent>
@@ -604,7 +604,7 @@ export default function Fees() {
           <Button
             type="button"
             onClick={() => setDueDialogOpen(true)}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 sm:col-span-2 lg:w-auto"
           >
             Due {entityLabel}s
           </Button>
@@ -630,9 +630,159 @@ export default function Fees() {
         value={searchTerm}
         onChange={setSearchTerm}
         placeholder={`Search by ${entityLabel.toLowerCase()} name, place or ${contactLabel.toLowerCase()}`}
+        className="max-w-none"
       />
 
-      <div className="border rounded-md bg-white">
+      <div className="space-y-3 md:hidden">
+        {studentsLoading || feesLoading ? (
+          <div className="rounded-md border bg-white p-6 text-center text-sm text-gray-500 shadow-sm">Loading...</div>
+        ) : filteredStudents.length === 0 ? (
+          <div className="rounded-md border bg-white p-6 text-center text-sm text-gray-500 shadow-sm">
+            No {entityLabel.toLowerCase()}s found.
+          </div>
+        ) : (
+          paginatedStudents.map((student) => {
+            const record = feeMap[student.id!];
+            const feeAmount = getStudentAmount(student.id!);
+            const paidAmount = record?.status === 'paid'
+              ? (record.paidAmount ?? record.amount ?? feeAmount)
+              : 0;
+            const balanceAmount = Math.max(feeAmount - paidAmount, 0);
+            const isPaidExact = record?.status === 'paid' && (isMembershipAdmin ? paidAmount + 0.009 >= feeAmount : Math.abs(paidAmount - feeAmount) < 0.01);
+            const hasPaidMismatch = record?.status === 'paid' && !isPaidExact;
+            const isLocalFund = isMembershipAdmin && !isAnnualFund;
+            const localFundSummary = isLocalFund ? getLocalFundSummary(student.id!) : null;
+            const isOverdue = !record || record.status === 'unpaid';
+            const receiptSent = !!sentMessageIds[`${student.id!}:receipt:${fundPeriodKey}`];
+            const warningType = hasPaidMismatch ? 'partial' : 'overdue';
+            const warningSent = !!sentMessageIds[`${student.id!}:${warningType}:${fundPeriodKey}`];
+
+            return (
+              <div key={student.id} className="rounded-md border bg-white p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <Avatar className="h-11 w-11 shrink-0">
+                    <AvatarImage src={student.photoURL} />
+                    <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1.5 break-words font-medium text-gray-900">
+                      <span>{student.name}</span>
+                      {isMembershipAdmin && isAnnualFund && topExtraPaidMembers.has(student.id!) && (
+                        <Crown
+                          className="h-4 w-4 shrink-0"
+                          style={{
+                            color:
+                              topExtraPaidMembers.get(student.id!) === 1
+                                ? '#d97706'
+                                : topExtraPaidMembers.get(student.id!) === 2
+                                  ? '#64748b'
+                                  : '#b45309',
+                          }}
+                          aria-label={`Rank ${topExtraPaidMembers.get(student.id!)} contributor`}
+                        />
+                      )}
+                    </p>
+                    <p className="break-all text-xs text-gray-500">{isMembershipAdmin ? student.phoneNumber : student.parentMobile}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-md bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Paid</p>
+                    <p className="inline-flex items-center gap-1.5 break-words font-semibold text-green-700">
+                      {formatAmount(paidAmount)}
+                      {isMembershipAdmin && isAnnualFund && paidAmount > feeAmount + 0.009 && (
+                        <Flame className="h-4 w-4 shrink-0 fill-orange-500 text-orange-500" aria-label="Paid above minimum" />
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-md bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Balance</p>
+                    <p className="break-words font-semibold text-orange-700">{formatAmount(balanceAmount)}</p>
+                  </div>
+                  {localFundSummary && localFundSummary.totalPaid > 0 && (
+                    <p className="col-span-2 text-xs text-yellow-600">
+                      Total {formatAmount(localFundSummary.totalPaid)}
+                      {localFundSummary.paidThrough ? ` - Paid up to ${formatMonthLabel(localFundSummary.paidThrough)}` : ''}
+                      {localFundSummary.partialMonth ? ` - Partial ${formatMonthLabel(localFundSummary.partialMonth)} ${formatAmount(localFundSummary.partialAmount)}` : ''}
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <Button
+                    variant={isPaidExact ? 'default' : 'outline'}
+                    className={isPaidExact ? 'bg-green-600 hover:bg-green-700' : ''}
+                    onClick={() => handleMarkFullPaid(student.id!)}
+                    size="sm"
+                  >
+                    Paid
+                  </Button>
+                  <Button
+                    variant={hasPaidMismatch ? 'default' : 'outline'}
+                    className={hasPaidMismatch ? 'bg-amber-500 hover:bg-amber-600' : ''}
+                    onClick={() => openPaidAmountDialog(student.id!, 'partial')}
+                    size="sm"
+                  >
+                    Partial
+                  </Button>
+                  <Button
+                    variant={record?.status === 'unpaid' ? 'default' : 'outline'}
+                    className={record?.status === 'unpaid' ? 'bg-orange-500 hover:bg-orange-600' : ''}
+                    onClick={() => handleMark(student.id!, 'unpaid')}
+                    size="sm"
+                  >
+                    Unpaid
+                  </Button>
+                </div>
+
+                {(isPaidExact || hasPaidMismatch || ((record?.status === 'unpaid' || !record) && isOverdue)) && (
+                  <div className="mt-3 grid gap-2">
+                    {isPaidExact && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={receiptSent ? 'text-gray-500 bg-gray-50' : 'text-green-600 hover:text-green-700 hover:bg-green-50'}
+                        disabled={!!sendingIds[student.id!] || receiptSent}
+                        onClick={() => handleSendFeeMessage(
+                          student.id!,
+                          student.name,
+                          isMembershipAdmin ? (student.phoneNumber || '') : student.parentMobile,
+                          'receipt',
+                          { receiptAmount: paidAmount, receiptDate: record?.paidOn },
+                        )}
+                      >
+                        <MessageSquareShare className="w-4 h-4" />
+                        {sendingIds[student.id!] ? 'Sending...' : receiptSent ? 'Sent' : 'Receipt'}
+                      </Button>
+                    )}
+                    {(hasPaidMismatch || ((record?.status === 'unpaid' || !record) && isOverdue)) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={warningSent ? 'text-gray-500 bg-gray-50' : 'text-red-600 hover:text-red-700 hover:bg-red-50'}
+                        disabled={!!sendingIds[student.id!] || warningSent}
+                        onClick={() => handleSendFeeMessage(
+                          student.id!,
+                          student.name,
+                          isMembershipAdmin ? (student.phoneNumber || '') : student.parentMobile,
+                          warningType,
+                          hasPaidMismatch ? { expectedAmount: feeAmount, paidAmount } : undefined,
+                        )}
+                      >
+                        <MessageSquareWarning className="w-4 h-4" />
+                        {sendingIds[student.id!] ? 'Sending...' : warningSent ? 'Sent' : hasPaidMismatch ? 'Payment Warning' : 'Overdue Warning'}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-md border bg-white md:block">
         <Table>
           <TableHeader>
             <TableRow>

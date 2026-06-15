@@ -24,12 +24,12 @@ export default function AppLayout() {
   const visibleNavItems = isMembershipAdmin ? navItems.filter((item) => item.href !== '/attendance') : navItems;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
+    <div className="min-h-screen w-full overflow-x-hidden bg-gray-50 flex flex-col md:flex-row">
       {/* Mobile topnav */}
-      <div className="md:hidden flex items-center justify-between p-4 bg-white border-b">
-        <div className="flex items-center gap-2">
-          <img src={sumjayLogo} alt="Sumjay logo" className="h-9 w-9 rounded-md object-contain" />
-          <h1 className="font-bold text-xl text-primary">Sumjay Paravanna</h1>
+      <div className="md:hidden flex items-center justify-between gap-3 p-4 bg-white border-b">
+        <div className="flex min-w-0 items-center gap-2">
+          <img src={sumjayLogo} alt="Sumjay logo" className="h-9 w-9 shrink-0 rounded-md object-contain" />
+          <h1 className="truncate font-bold text-xl text-primary">Sumjay Paravanna</h1>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
           <Menu />
@@ -37,7 +37,7 @@ export default function AppLayout() {
       </div>
 
       {/* Sidebar */}
-      <div className={`${isSidebarOpen ? 'block' : 'hidden'} md:block w-full md:w-64 bg-white border-r min-h-screen flex flex-col`}>
+      <div className={`${isSidebarOpen ? 'block' : 'hidden'} md:block w-full md:w-64 bg-white border-r md:min-h-screen flex flex-col`}>
         <div className="p-6 hidden md:flex items-center gap-3">
           <img src={sumjayLogo} alt="Sumjay logo" className="h-11 w-11 rounded-md object-contain" />
           <h1 className="font-bold text-2xl text-primary tracking-tight">Sumjay Paravanna</h1>
@@ -96,7 +96,7 @@ export default function AppLayout() {
       </div>
 
       {/* Main content */}
-      <main className="flex-1 p-4 md:p-8 overflow-auto h-screen">
+      <main className="min-w-0 flex-1 p-4 md:p-8 overflow-x-hidden overflow-y-auto md:h-screen">
         <Outlet />
       </main>
     </div>

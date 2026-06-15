@@ -182,8 +182,8 @@ export default function Students() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex justify-between items-center">
+    <div className="w-full max-w-5xl mx-auto space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-primary">{itemLabel}s</h1>
           <p className="text-gray-500">Manage {itemLabel.toLowerCase()} directory and details.</p>
@@ -196,7 +196,7 @@ export default function Students() {
               setPhotoFile(null);
               setSaveError('');
               setFormData({ name: '', dob: '', place: '', parentMobile: '', phoneNumber: '', bloodGroup: '', email: '', memberRole: 'local', photoURL: '' });
-            }}>Add {itemLabel}</Button>
+            }} className="w-full sm:w-auto">Add {itemLabel}</Button>
           </DialogTrigger>
           <DialogContent className="flex max-h-[90vh] max-w-xl flex-col overflow-hidden">
             <DialogHeader>
@@ -269,13 +269,13 @@ export default function Students() {
           </DialogHeader>
           {selectedStudent && (
             <div className="space-y-4 pt-2">
-              <div className="flex items-center gap-4">
-                <Avatar className="h-28 w-28">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <Avatar className="h-28 w-28 shrink-0">
                   <AvatarImage src={selectedStudent.photoURL} />
                   <AvatarFallback>{selectedStudent.name.charAt(0)}</AvatarFallback>
                 </Avatar>
-                <div>
-                  <p className="text-xl font-semibold text-gray-900">{selectedStudent.name}</p>
+                <div className="min-w-0">
+                  <p className="break-words text-xl font-semibold text-gray-900">{selectedStudent.name}</p>
                   <p className="text-sm text-gray-500">{itemLabel} profile</p>
                 </div>
               </div>
@@ -305,6 +305,7 @@ export default function Students() {
           value={searchTerm}
           onChange={setSearchTerm}
           placeholder={isMembershipAdmin ? 'Search by name, DOB, place, phone, blood group or role' : 'Search by name, DOB, place or parent mobile'}
+          className="max-w-none"
         />
         {isMembershipAdmin && (
           <div className="w-full md:w-48">
@@ -321,7 +322,94 @@ export default function Students() {
         )}
       </div>
 
-      <div className="border rounded-md bg-white">
+      <div className="space-y-3 md:hidden">
+        {loading ? (
+          <div className="rounded-md border bg-white p-6 text-center text-sm text-gray-500 shadow-sm">Loading...</div>
+        ) : filteredStudents.length === 0 ? (
+          <div className="rounded-md border bg-white p-6 text-center text-sm text-gray-500 shadow-sm">
+            No {itemLabel.toLowerCase()}s found. Add one to get started.
+          </div>
+        ) : (
+          paginatedStudents.map((student) => (
+            <div
+              key={student.id}
+              className="rounded-md border bg-white p-4 shadow-sm"
+              onClick={() => { setSelectedStudent(student); setIsDetailsOpen(true); }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  setSelectedStudent(student);
+                  setIsDetailsOpen(true);
+                }
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <Avatar className="h-11 w-11 shrink-0">
+                  <AvatarImage src={student.photoURL} />
+                  <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="break-words font-medium text-gray-900">{student.name}</p>
+                  {isMembershipAdmin && <p className="break-words text-xs text-gray-500">{student.email || 'No email'}</p>}
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500">DOB</p>
+                      <p className="break-words text-gray-900">{student.dob || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Place</p>
+                      <p className="break-words text-gray-900">{student.place || '-'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-500">{isMembershipAdmin ? 'Phone Number' : 'Parent Mobile'}</p>
+                      <a
+                        href={phoneHref(contactValue(student))}
+                        className="inline-flex max-w-full items-center gap-1.5 break-all text-green-600"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <Phone className="h-4 w-4 shrink-0" />
+                        {contactValue(student) || '-'}
+                      </a>
+                    </div>
+                    {isMembershipAdmin && (
+                      <>
+                        <div>
+                          <p className="text-xs text-gray-500">Role</p>
+                          <p className="text-gray-900">{student.memberRole === 'abroad' ? 'Abroad' : 'Local'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Blood Group</p>
+                          <p className="text-gray-900">{student.bloodGroup || '-'}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(event) => { event.stopPropagation(); openEdit(student); }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={(event) => { event.stopPropagation(); if (student.id) handleDelete(student.id); }}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-md border bg-white md:block">
         <Table>
           <TableHeader>
             <TableRow>

@@ -110,19 +110,19 @@ export default function Attendance() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex justify-between items-center bg-white p-4 rounded-lg border shadow-sm">
+    <div className="w-full max-w-5xl mx-auto space-y-6">
+      <div className="flex flex-col gap-4 bg-white p-4 rounded-lg border shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-primary">Attendance</h1>
           <p className="text-gray-500 text-sm">Mark daily attendance</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full items-center gap-3 sm:w-auto">
           <label className="text-sm font-medium text-gray-700">Date:</label>
           <Input 
             type="date" 
             value={date} 
             onChange={(e) => setDate(e.target.value)} 
-            className="w-auto"
+            className="min-w-0 flex-1 sm:w-auto sm:flex-none"
           />
         </div>
       </div>
@@ -133,7 +133,7 @@ export default function Attendance() {
         placeholder="Search by student name, place or parent mobile"
       />
 
-      <div className="border rounded-md bg-white">
+      <div className="overflow-hidden rounded-md border bg-white">
         <Table>
           <TableHeader>
             <TableRow>

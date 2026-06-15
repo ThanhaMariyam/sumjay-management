@@ -124,7 +124,7 @@ export default function UserProfile() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="w-full max-w-3xl mx-auto space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-primary">{member ? 'Edit Profile' : 'Create Profile'}</h1>
         <p className="text-gray-500">Your profile uses the same member details shown to membership admin.</p>
@@ -137,13 +137,13 @@ export default function UserProfile() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="flex items-center gap-4 rounded-md border bg-gray-50 p-4">
-              <Avatar className="h-24 w-24">
+            <div className="flex flex-col gap-4 rounded-md border bg-gray-50 p-4 sm:flex-row sm:items-center">
+              <Avatar className="h-24 w-24 shrink-0">
                 <AvatarImage src={previewPhotoURL} />
                 <AvatarFallback className="text-2xl">{formData.name.charAt(0).toUpperCase() || 'M'}</AvatarFallback>
               </Avatar>
-              <div>
-                <p className="font-medium text-gray-900">{formData.name || 'Member photo'}</p>
+              <div className="min-w-0">
+                <p className="break-words font-medium text-gray-900">{formData.name || 'Member photo'}</p>
                 <p className="text-sm text-gray-500">Uploaded photo will be shown on your dashboard and profile.</p>
               </div>
             </div>
@@ -188,7 +188,7 @@ export default function UserProfile() {
               <Label htmlFor="photoUpload">Member Photo (Optional)</Label>
               <Input id="photoUpload" type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)} />
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => navigate('/user')}>Cancel</Button>
               <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Profile'}</Button>
             </div>
