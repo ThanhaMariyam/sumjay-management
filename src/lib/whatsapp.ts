@@ -1,3 +1,6 @@
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from './firebase';
+
 const env = (import.meta.env as Record<string, string | undefined>) ?? {};
 const apiBaseUrl = (env.VITE_WHATSAPP_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '')).replace(/\/$/, '');
 const isLocalApi = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/.test(apiBaseUrl);
@@ -9,6 +12,15 @@ export interface WhatsAppTemplate {
 }
 
 const SENT_MESSAGES_STORAGE_KEY = 'sumjay.sentWhatsAppMessages';
+const safeSendKeyPart = (value: string) => value.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown';
+
+export function buildWhatsAppSendKey(...parts: string[]) {
+  return parts.map(safeSendKeyPart).join('__');
+}
+
+export function buildLegacyWhatsAppSendKey(...parts: string[]) {
+  return parts.join(':');
+}
 
 export function readSentWhatsAppMessageIds(): Record<string, boolean> {
   if (typeof window === 'undefined') return {};
@@ -29,6 +41,21 @@ export function saveSentWhatsAppMessageId(sendKey: string) {
     [sendKey]: true,
   };
   window.localStorage.setItem(SENT_MESSAGES_STORAGE_KEY, JSON.stringify(nextSentMessages));
+}
+
+export async function saveSentWhatsAppMessageRecord(data: {
+  adminId: string;
+  sendKey: string;
+  category: 'fee' | 'attendance';
+  targetId: string;
+  messageType: string;
+  periodKey: string;
+}) {
+  saveSentWhatsAppMessageId(data.sendKey);
+  await setDoc(doc(db, 'whatsappMessages', data.sendKey), {
+    ...data,
+    sentAt: Date.now(),
+  }, { merge: true });
 }
 
 export async function sendWhatsAppMessage(to: string, message: string, template?: WhatsAppTemplate) {

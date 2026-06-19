@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useStudents, useAttendance } from '../lib/hooks';
+import { useStudents, useAttendance, useSentWhatsAppMessageIds } from '../lib/hooks';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
@@ -9,7 +9,7 @@ import { collection, doc, setDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { MessageSquareWarning } from 'lucide-react';
 import { Attendance as AttendanceType } from '../types';
-import { readSentWhatsAppMessageIds, saveSentWhatsAppMessageId, sendWhatsAppMessage } from '../lib/whatsapp';
+import { buildLegacyWhatsAppSendKey, buildWhatsAppSendKey, saveSentWhatsAppMessageRecord, sendWhatsAppMessage } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { SearchInput } from '../components/SearchInput';
 import { Pagination } from '../components/Pagination';
@@ -24,7 +24,7 @@ export default function Attendance() {
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const { attendance, loading: attendanceLoading } = useAttendance();
   const [sendingIds, setSendingIds] = useState<Record<string, boolean>>({});
-  const [sentMessageIds, setSentMessageIds] = useState<Record<string, boolean>>(() => readSentWhatsAppMessageIds());
+  const { sentMessageIds, setSentMessageIds } = useSentWhatsAppMessageIds();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -96,12 +96,25 @@ export default function Attendance() {
   });
 
   const handleSendAbsentMessage = async (studentId: string, studentName: string, mobile: string) => {
-    const sendKey = `${user?.adminId ?? 'default'}:attendance:${studentId}:${date}`;
+    if (!user) return;
+    const sendKey = buildWhatsAppSendKey(user.adminId, 'attendance', studentId, 'absent', date);
     setSendingIds((prev) => ({ ...prev, [studentId]: true }));
     try {
       await sendWhatsAppMessage(mobile, getAbsentMessage(studentName, date), getAbsentTemplate(studentName, date));
-      saveSentWhatsAppMessageId(sendKey);
       setSentMessageIds((prev) => ({ ...prev, [sendKey]: true }));
+      try {
+        await saveSentWhatsAppMessageRecord({
+          adminId: user.adminId,
+          sendKey,
+          category: 'attendance',
+          targetId: studentId,
+          messageType: 'absent',
+          periodKey: date,
+        });
+      } catch (saveError) {
+        console.warn('WhatsApp message sent, but Firestore sent status could not be saved.', saveError);
+        toast.warning('Message sent, but sent status could not sync to other devices.');
+      }
       toast.success(`Absent notification sent to ${studentName}'s parent.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to send WhatsApp message.');
@@ -151,7 +164,8 @@ export default function Attendance() {
             ) : (
               paginatedStudents.map(student => {
                 const record = attendanceMap[student.id!];
-                const messageSent = !!sentMessageIds[`${user?.adminId ?? 'default'}:attendance:${student.id!}:${date}`];
+                const messageSent = !!sentMessageIds[buildWhatsAppSendKey(user?.adminId ?? 'default', 'attendance', student.id!, 'absent', date)]
+                  || !!sentMessageIds[buildLegacyWhatsAppSendKey(user?.adminId ?? 'default', 'attendance', student.id!, date)];
                 return (
                   <TableRow key={student.id}>
                     <TableCell>

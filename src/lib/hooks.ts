@@ -3,6 +3,7 @@ import { collection, limit, onSnapshot, query, where } from 'firebase/firestore'
 import { db, handleFirestoreError } from './firebase';
 import { useAuth } from './AuthContext';
 import { Student, Attendance, Fee, Member } from '../types';
+import { readSentWhatsAppMessageIds } from './whatsapp';
 
 export function useStudents(collectionName: 'students' | 'members' = 'students') {
   const { user, isMembershipAdmin, isMemberUser } = useAuth();
@@ -151,6 +152,39 @@ export function useFees() {
   }, [user, isMembershipAdmin, isMemberUser]);
 
   return { fees, loading };
+}
+
+export function useSentWhatsAppMessageIds() {
+  const { user } = useAuth();
+  const [sentMessageIds, setSentMessageIds] = useState<Record<string, boolean>>(() => readSentWhatsAppMessageIds());
+
+  useEffect(() => {
+    if (!user) {
+      setSentMessageIds(readSentWhatsAppMessageIds());
+      return;
+    }
+
+    const q = query(collection(db, 'whatsappMessages'), where('adminId', '==', user.adminId));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const firestoreSentMessages = snapshot.docs.reduce((acc, docSnap) => {
+        const data = docSnap.data();
+        const sendKey = typeof data.sendKey === 'string' ? data.sendKey : docSnap.id;
+        acc[sendKey] = true;
+        return acc;
+      }, {} as Record<string, boolean>);
+      setSentMessageIds({
+        ...readSentWhatsAppMessageIds(),
+        ...firestoreSentMessages,
+      });
+    }, (error) => {
+      console.warn('Unable to load sent WhatsApp message status from Firestore.', error);
+      setSentMessageIds(readSentWhatsAppMessageIds());
+    });
+
+    return () => unsub();
+  }, [user]);
+
+  return { sentMessageIds, setSentMessageIds };
 }
 
 export function useCurrentMemberProfile() {

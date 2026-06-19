@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useStudents, useFees } from '../lib/hooks';
+import { useStudents, useFees, useSentWhatsAppMessageIds } from '../lib/hooks';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
@@ -11,7 +11,7 @@ import { collection, doc, setDoc } from 'firebase/firestore';
 import { addMonths, format } from 'date-fns';
 import { Crown, Flame, MessageSquareWarning, MessageSquareShare } from 'lucide-react';
 import { Fee as FeeType, MemberRole } from '../types';
-import { readSentWhatsAppMessageIds, saveSentWhatsAppMessageId, sendWhatsAppMessage, WhatsAppTemplate } from '../lib/whatsapp';
+import { buildLegacyWhatsAppSendKey, buildWhatsAppSendKey, saveSentWhatsAppMessageRecord, sendWhatsAppMessage, WhatsAppTemplate } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { SearchInput } from '../components/SearchInput';
 import { Pagination } from '../components/Pagination';
@@ -77,7 +77,7 @@ export default function Fees() {
   const [defaultAmount, setDefaultAmount] = useState(() => getStoredDefaultAmount(defaultAmountKey));
   const { fees, loading: feesLoading } = useFees();
   const [sendingIds, setSendingIds] = useState<Record<string, boolean>>({});
-  const [sentMessageIds, setSentMessageIds] = useState<Record<string, boolean>>(() => readSentWhatsAppMessageIds());
+  const { sentMessageIds, setSentMessageIds } = useSentWhatsAppMessageIds();
   const [paidDialogOpen, setPaidDialogOpen] = useState(false);
   const [dueDialogOpen, setDueDialogOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -453,7 +453,8 @@ export default function Fees() {
       receiptDate?: string | null;
     },
   ) => {
-    const sendKey = `${user?.adminId ?? 'default'}:fee:${studentId}:${messageType}:${fundPeriodKey}`;
+    if (!user) return;
+    const sendKey = buildWhatsAppSendKey(user.adminId, 'fee', studentId, messageType, fundPeriodKey);
     setSendingIds((prev) => ({ ...prev, [studentId]: true }));
     try {
       const message =
@@ -469,8 +470,20 @@ export default function Fees() {
             ? getPartialPaymentTemplate(studentName, fundPeriodKey, meta.expectedAmount, meta.paidAmount)
             : getWarningTemplate(studentName, fundPeriodKey);
       await sendWhatsAppMessage(mobile, message, template);
-      saveSentWhatsAppMessageId(sendKey);
       setSentMessageIds((prev) => ({ ...prev, [sendKey]: true }));
+      try {
+        await saveSentWhatsAppMessageRecord({
+          adminId: user.adminId,
+          sendKey,
+          category: 'fee',
+          targetId: studentId,
+          messageType,
+          periodKey: fundPeriodKey,
+        });
+      } catch (saveError) {
+        console.warn('WhatsApp message sent, but Firestore sent status could not be saved.', saveError);
+        toast.warning('Message sent, but sent status could not sync to other devices.');
+      }
       const personLabel = isMembershipAdmin ? 'member' : 'parent';
       toast.success(
         messageType === 'receipt'
@@ -654,9 +667,11 @@ export default function Fees() {
             const isLocalFund = isMembershipAdmin && !isAnnualFund;
             const localFundSummary = isLocalFund ? getLocalFundSummary(student.id!) : null;
             const isOverdue = !record || record.status === 'unpaid';
-            const receiptSent = !!sentMessageIds[`${user?.adminId ?? 'default'}:fee:${student.id!}:receipt:${fundPeriodKey}`];
+            const receiptSent = !!sentMessageIds[buildWhatsAppSendKey(user?.adminId ?? 'default', 'fee', student.id!, 'receipt', fundPeriodKey)]
+              || !!sentMessageIds[buildLegacyWhatsAppSendKey(user?.adminId ?? 'default', 'fee', student.id!, 'receipt', fundPeriodKey)];
             const warningType = hasPaidMismatch ? 'partial' : 'overdue';
-            const warningSent = !!sentMessageIds[`${user?.adminId ?? 'default'}:fee:${student.id!}:${warningType}:${fundPeriodKey}`];
+            const warningSent = !!sentMessageIds[buildWhatsAppSendKey(user?.adminId ?? 'default', 'fee', student.id!, warningType, fundPeriodKey)]
+              || !!sentMessageIds[buildLegacyWhatsAppSendKey(user?.adminId ?? 'default', 'fee', student.id!, warningType, fundPeriodKey)];
 
             return (
               <div key={student.id} className="rounded-md border bg-white p-4 shadow-sm">
@@ -813,9 +828,11 @@ export default function Fees() {
                 const localFundSummary = isLocalFund ? getLocalFundSummary(student.id!) : null;
                 // Show warning as soon as a row is marked unpaid (or no payment exists yet).
                 const isOverdue = !record || record.status === 'unpaid';
-                const receiptSent = !!sentMessageIds[`${user?.adminId ?? 'default'}:fee:${student.id!}:receipt:${fundPeriodKey}`];
+                const receiptSent = !!sentMessageIds[buildWhatsAppSendKey(user?.adminId ?? 'default', 'fee', student.id!, 'receipt', fundPeriodKey)]
+                  || !!sentMessageIds[buildLegacyWhatsAppSendKey(user?.adminId ?? 'default', 'fee', student.id!, 'receipt', fundPeriodKey)];
                 const warningType = hasPaidMismatch ? 'partial' : 'overdue';
-                const warningSent = !!sentMessageIds[`${user?.adminId ?? 'default'}:fee:${student.id!}:${warningType}:${fundPeriodKey}`];
+                const warningSent = !!sentMessageIds[buildWhatsAppSendKey(user?.adminId ?? 'default', 'fee', student.id!, warningType, fundPeriodKey)]
+                  || !!sentMessageIds[buildLegacyWhatsAppSendKey(user?.adminId ?? 'default', 'fee', student.id!, warningType, fundPeriodKey)];
 
                 return (
                   <TableRow key={student.id}>

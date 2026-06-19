@@ -69,6 +69,18 @@ service cloud.firestore {
         && (data.keys().hasAll(['updatedAt']) ? data.updatedAt is number : true);
     }
 
+    // WhatsApp Sent Message Validation
+    function isValidWhatsAppMessage(data) {
+      return data.keys().hasAll(['adminId', 'sendKey', 'category', 'targetId', 'messageType', 'periodKey', 'sentAt'])
+        && data.adminId is string && data.adminId == request.auth.uid
+        && data.sendKey is string && data.sendKey.size() > 0 && data.sendKey.size() <= 500
+        && data.category is string && (data.category == 'fee' || data.category == 'attendance')
+        && data.targetId is string && data.targetId.size() > 0 && data.targetId.size() <= 128
+        && data.messageType is string && data.messageType.size() > 0 && data.messageType.size() <= 32
+        && data.periodKey is string && data.periodKey.size() >= 7 && data.periodKey.size() <= 10
+        && data.sentAt is number;
+    }
+
     // /students/{studentId}
     match /students/{studentId} {
       allow get: if isValidId(studentId) && isAdmin(existing().adminId);
@@ -170,6 +182,25 @@ service cloud.firestore {
                     && incoming().studentId == existing().studentId
                     && incoming().createdAt == existing().createdAt;
       allow delete: if isValidId(feeId) && (isAdmin(existing().adminId) || isMembershipAdmin());
+    }
+
+    // /whatsappMessages/{messageId}
+    match /whatsappMessages/{messageId} {
+      allow get: if isValidId(messageId) && isAdmin(existing().adminId);
+      allow list: if isSignedIn() && existing().adminId == request.auth.uid;
+      allow create: if isValidId(messageId)
+                    && isValidWhatsAppMessage(incoming())
+                    && incoming().sendKey == messageId;
+      allow update: if isValidId(messageId)
+                    && isAdmin(existing().adminId)
+                    && isValidWhatsAppMessage(incoming())
+                    && incoming().adminId == existing().adminId
+                    && incoming().sendKey == existing().sendKey
+                    && incoming().targetId == existing().targetId
+                    && incoming().category == existing().category
+                    && incoming().messageType == existing().messageType
+                    && incoming().periodKey == existing().periodKey;
+      allow delete: if false;
     }
   }
 }
