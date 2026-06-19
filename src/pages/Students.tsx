@@ -322,7 +322,7 @@ export default function Students() {
         )}
       </div>
 
-      <div className="space-y-3 md:hidden">
+      <div className="responsive-cards space-y-3">
         {loading ? (
           <div className="rounded-md border bg-white p-6 text-center text-sm text-gray-500 shadow-sm">Loading...</div>
         ) : filteredStudents.length === 0 ? (
@@ -409,7 +409,7 @@ export default function Students() {
         )}
       </div>
 
-      <div className="hidden overflow-hidden rounded-md border bg-white md:block">
+      <div className="responsive-table mobile-landscape-table overflow-hidden rounded-md border bg-white">
         <Table>
           <TableHeader>
             <TableRow>
@@ -430,7 +430,7 @@ export default function Students() {
             ) : (
               paginatedStudents.map(student => (
                 <TableRow key={student.id} className="cursor-pointer hover:bg-gray-50" onClick={() => { setSelectedStudent(student); setIsDetailsOpen(true); }}>
-                  <TableCell>
+                  <TableCell className="table-primary-cell">
                     <div className="flex items-center gap-3">
                       <Avatar className="h-9 w-9">
                         <AvatarImage src={student.photoURL} />
@@ -460,9 +460,11 @@ export default function Students() {
                   </TableCell>
                   {isMembershipAdmin && <TableCell>{student.memberRole === 'abroad' ? 'Abroad' : 'Local'}</TableCell>}
                   {isMembershipAdmin && <TableCell>{student.bloodGroup}</TableCell>}
-                  <TableCell className="text-right space-x-2">
+                  <TableCell className="text-right">
+                    <div className="table-action-group">
                     <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(student); }}>Edit</Button>
                     <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); if (student.id) handleDelete(student.id); }}>Delete</Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

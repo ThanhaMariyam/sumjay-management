@@ -11,7 +11,7 @@ import { collection, doc, setDoc } from 'firebase/firestore';
 import { addMonths, format } from 'date-fns';
 import { Crown, Flame, MessageSquareWarning, MessageSquareShare } from 'lucide-react';
 import { Fee as FeeType, MemberRole } from '../types';
-import { sendWhatsAppMessage, WhatsAppTemplate } from '../lib/whatsapp';
+import { readSentWhatsAppMessageIds, saveSentWhatsAppMessageId, sendWhatsAppMessage, WhatsAppTemplate } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { SearchInput } from '../components/SearchInput';
 import { Pagination } from '../components/Pagination';
@@ -77,7 +77,7 @@ export default function Fees() {
   const [defaultAmount, setDefaultAmount] = useState(() => getStoredDefaultAmount(defaultAmountKey));
   const { fees, loading: feesLoading } = useFees();
   const [sendingIds, setSendingIds] = useState<Record<string, boolean>>({});
-  const [sentMessageIds, setSentMessageIds] = useState<Record<string, boolean>>({});
+  const [sentMessageIds, setSentMessageIds] = useState<Record<string, boolean>>(() => readSentWhatsAppMessageIds());
   const [paidDialogOpen, setPaidDialogOpen] = useState(false);
   const [dueDialogOpen, setDueDialogOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -453,7 +453,7 @@ export default function Fees() {
       receiptDate?: string | null;
     },
   ) => {
-    const sendKey = `${studentId}:${messageType}:${fundPeriodKey}`;
+    const sendKey = `${user?.adminId ?? 'default'}:fee:${studentId}:${messageType}:${fundPeriodKey}`;
     setSendingIds((prev) => ({ ...prev, [studentId]: true }));
     try {
       const message =
@@ -469,6 +469,7 @@ export default function Fees() {
             ? getPartialPaymentTemplate(studentName, fundPeriodKey, meta.expectedAmount, meta.paidAmount)
             : getWarningTemplate(studentName, fundPeriodKey);
       await sendWhatsAppMessage(mobile, message, template);
+      saveSentWhatsAppMessageId(sendKey);
       setSentMessageIds((prev) => ({ ...prev, [sendKey]: true }));
       const personLabel = isMembershipAdmin ? 'member' : 'parent';
       toast.success(
@@ -633,7 +634,7 @@ export default function Fees() {
         className="max-w-none"
       />
 
-      <div className="space-y-3 md:hidden">
+      <div className="responsive-cards space-y-3">
         {studentsLoading || feesLoading ? (
           <div className="rounded-md border bg-white p-6 text-center text-sm text-gray-500 shadow-sm">Loading...</div>
         ) : filteredStudents.length === 0 ? (
@@ -653,9 +654,9 @@ export default function Fees() {
             const isLocalFund = isMembershipAdmin && !isAnnualFund;
             const localFundSummary = isLocalFund ? getLocalFundSummary(student.id!) : null;
             const isOverdue = !record || record.status === 'unpaid';
-            const receiptSent = !!sentMessageIds[`${student.id!}:receipt:${fundPeriodKey}`];
+            const receiptSent = !!sentMessageIds[`${user?.adminId ?? 'default'}:fee:${student.id!}:receipt:${fundPeriodKey}`];
             const warningType = hasPaidMismatch ? 'partial' : 'overdue';
-            const warningSent = !!sentMessageIds[`${student.id!}:${warningType}:${fundPeriodKey}`];
+            const warningSent = !!sentMessageIds[`${user?.adminId ?? 'default'}:fee:${student.id!}:${warningType}:${fundPeriodKey}`];
 
             return (
               <div key={student.id} className="rounded-md border bg-white p-4 shadow-sm">
@@ -782,7 +783,7 @@ export default function Fees() {
         )}
       </div>
 
-      <div className="hidden overflow-hidden rounded-md border bg-white md:block">
+      <div className="responsive-table mobile-landscape-table overflow-hidden rounded-md border bg-white">
         <Table>
           <TableHeader>
             <TableRow>
@@ -812,13 +813,13 @@ export default function Fees() {
                 const localFundSummary = isLocalFund ? getLocalFundSummary(student.id!) : null;
                 // Show warning as soon as a row is marked unpaid (or no payment exists yet).
                 const isOverdue = !record || record.status === 'unpaid';
-                const receiptSent = !!sentMessageIds[`${student.id!}:receipt:${fundPeriodKey}`];
+                const receiptSent = !!sentMessageIds[`${user?.adminId ?? 'default'}:fee:${student.id!}:receipt:${fundPeriodKey}`];
                 const warningType = hasPaidMismatch ? 'partial' : 'overdue';
-                const warningSent = !!sentMessageIds[`${student.id!}:${warningType}:${fundPeriodKey}`];
+                const warningSent = !!sentMessageIds[`${user?.adminId ?? 'default'}:fee:${student.id!}:${warningType}:${fundPeriodKey}`];
 
                 return (
                   <TableRow key={student.id}>
-                    <TableCell>
+                    <TableCell className="table-primary-cell">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-9 w-9">
                           <AvatarImage src={student.photoURL} />
@@ -865,7 +866,7 @@ export default function Fees() {
                     </TableCell>
                     <TableCell className="text-orange-700 font-medium">{formatAmount(balanceAmount)}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
+                      <div className="table-action-group flex items-center gap-2">
                         <Button 
                           variant={isPaidExact ? 'default' : 'outline'}
                           className={isPaidExact ? 'bg-green-600 hover:bg-green-700' : ''}
@@ -892,7 +893,8 @@ export default function Fees() {
                         </Button>
                       </div>
                     </TableCell>
-                    <TableCell className="text-right space-x-2">
+                    <TableCell className="text-right">
+                      <div className="table-action-group">
                       {isPaidExact && (
                         <Button
                           variant="outline"
@@ -929,6 +931,7 @@ export default function Fees() {
                           {sendingIds[student.id!] ? 'Sending...' : warningSent ? 'Sent' : hasPaidMismatch ? 'Payment Warning' : 'Overdue Warning'}
                         </Button>
                       )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -1013,18 +1016,18 @@ export default function Fees() {
       </Dialog>
 
       <Dialog open={dueDialogOpen} onOpenChange={setDueDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="responsive-due-dialog">
           <DialogHeader>
             <DialogTitle>Due {entityLabel}s ({fundPeriodLabel})</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[420px] overflow-auto border rounded-md">
+          <div className="responsive-due-table max-h-[420px] overflow-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{entityLabel}</TableHead>
-                  <TableHead>Paid</TableHead>
-                  <TableHead>Balance</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="due-person-cell">{entityLabel}</TableHead>
+                  <TableHead className="due-amount-cell">Paid</TableHead>
+                  <TableHead className="due-amount-cell">Balance</TableHead>
+                  <TableHead className="due-status-cell">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1037,15 +1040,15 @@ export default function Fees() {
                 ) : (
                   dueStudents.map((row) => (
                     <TableRow key={row.id}>
-                      <TableCell>
+                      <TableCell className="due-person-cell">
                         <div>
                           <p className="font-medium">{row.name}</p>
                           <p className="text-xs text-gray-500">{row.parentMobile}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="text-green-700 font-medium">{formatAmount(row.paidAmount)}</TableCell>
-                      <TableCell className="text-orange-700 font-medium">{formatAmount(row.balanceAmount)}</TableCell>
-                      <TableCell>
+                      <TableCell className="due-amount-cell text-green-700 font-medium">{formatAmount(row.paidAmount)}</TableCell>
+                      <TableCell className="due-amount-cell text-orange-700 font-medium">{formatAmount(row.balanceAmount)}</TableCell>
+                      <TableCell className="due-status-cell">
                         <span className={row.status === 'UNPAID' ? 'text-red-600 font-medium' : 'text-amber-600 font-medium'}>
                           {row.status}
                         </span>

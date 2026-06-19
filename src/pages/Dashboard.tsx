@@ -347,18 +347,18 @@ export default function Dashboard() {
       </div>
 
       <Dialog open={dueDialogOpen} onOpenChange={setDueDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="responsive-due-dialog">
           <DialogHeader>
             <DialogTitle>Due {isMembershipAdmin ? 'Members' : 'Students'} ({fundPeriodLabel})</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[420px] overflow-auto border rounded-md">
+          <div className="responsive-due-table max-h-[420px] overflow-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{isMembershipAdmin ? 'Member' : 'Student'}</TableHead>
-                  <TableHead>Paid</TableHead>
-                  <TableHead>Balance</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="due-person-cell">{isMembershipAdmin ? 'Member' : 'Student'}</TableHead>
+                  <TableHead className="due-amount-cell">Paid</TableHead>
+                  <TableHead className="due-amount-cell">Balance</TableHead>
+                  <TableHead className="due-status-cell">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -371,15 +371,15 @@ export default function Dashboard() {
                 ) : (
                   dueStudents.map((row) => (
                     <TableRow key={row.id}>
-                      <TableCell>
+                      <TableCell className="due-person-cell">
                         <div>
                           <p className="font-medium">{row.name}</p>
                           <p className="text-xs text-gray-500">{row.parentMobile}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="text-green-700 font-medium">{formatWholeAmount(row.paidAmount)}</TableCell>
-                      <TableCell className="text-orange-700 font-medium">{formatWholeAmount(row.balanceAmount)}</TableCell>
-                      <TableCell>
+                      <TableCell className="due-amount-cell text-green-700 font-medium">{formatWholeAmount(row.paidAmount)}</TableCell>
+                      <TableCell className="due-amount-cell text-orange-700 font-medium">{formatWholeAmount(row.balanceAmount)}</TableCell>
+                      <TableCell className="due-status-cell">
                         <span className={row.status === 'UNPAID' ? 'text-red-600 font-medium' : 'text-amber-600 font-medium'}>
                           {row.status}
                         </span>

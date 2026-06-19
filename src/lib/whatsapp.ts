@@ -8,6 +8,29 @@ export interface WhatsAppTemplate {
   bodyParams?: string[];
 }
 
+const SENT_MESSAGES_STORAGE_KEY = 'sumjay.sentWhatsAppMessages';
+
+export function readSentWhatsAppMessageIds(): Record<string, boolean> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(SENT_MESSAGES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveSentWhatsAppMessageId(sendKey: string) {
+  if (typeof window === 'undefined') return;
+  const nextSentMessages = {
+    ...readSentWhatsAppMessageIds(),
+    [sendKey]: true,
+  };
+  window.localStorage.setItem(SENT_MESSAGES_STORAGE_KEY, JSON.stringify(nextSentMessages));
+}
+
 export async function sendWhatsAppMessage(to: string, message: string, template?: WhatsAppTemplate) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);

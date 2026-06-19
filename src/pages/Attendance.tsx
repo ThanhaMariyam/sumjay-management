@@ -9,7 +9,7 @@ import { collection, doc, setDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { MessageSquareWarning } from 'lucide-react';
 import { Attendance as AttendanceType } from '../types';
-import { sendWhatsAppMessage } from '../lib/whatsapp';
+import { readSentWhatsAppMessageIds, saveSentWhatsAppMessageId, sendWhatsAppMessage } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { SearchInput } from '../components/SearchInput';
 import { Pagination } from '../components/Pagination';
@@ -24,7 +24,7 @@ export default function Attendance() {
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const { attendance, loading: attendanceLoading } = useAttendance();
   const [sendingIds, setSendingIds] = useState<Record<string, boolean>>({});
-  const [sentMessageIds, setSentMessageIds] = useState<Record<string, boolean>>({});
+  const [sentMessageIds, setSentMessageIds] = useState<Record<string, boolean>>(() => readSentWhatsAppMessageIds());
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -96,10 +96,11 @@ export default function Attendance() {
   });
 
   const handleSendAbsentMessage = async (studentId: string, studentName: string, mobile: string) => {
-    const sendKey = `${studentId}:${date}`;
+    const sendKey = `${user?.adminId ?? 'default'}:attendance:${studentId}:${date}`;
     setSendingIds((prev) => ({ ...prev, [studentId]: true }));
     try {
       await sendWhatsAppMessage(mobile, getAbsentMessage(studentName, date), getAbsentTemplate(studentName, date));
+      saveSentWhatsAppMessageId(sendKey);
       setSentMessageIds((prev) => ({ ...prev, [sendKey]: true }));
       toast.success(`Absent notification sent to ${studentName}'s parent.`);
     } catch (error) {
@@ -150,7 +151,7 @@ export default function Attendance() {
             ) : (
               paginatedStudents.map(student => {
                 const record = attendanceMap[student.id!];
-                const messageSent = !!sentMessageIds[`${student.id!}:${date}`];
+                const messageSent = !!sentMessageIds[`${user?.adminId ?? 'default'}:attendance:${student.id!}:${date}`];
                 return (
                   <TableRow key={student.id}>
                     <TableCell>

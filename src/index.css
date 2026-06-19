@@ -154,3 +154,95 @@ body.membership-theme {
     @apply font-sans;
     }
 }
+
+.responsive-cards {
+  display: block;
+}
+
+.responsive-table {
+  display: none;
+}
+
+@media (orientation: landscape), (min-width: 768px) {
+  .responsive-cards {
+    display: none;
+  }
+
+  .responsive-table {
+    display: block;
+  }
+}
+
+@media (max-width: 767px) and (orientation: landscape) {
+  .mobile-landscape-table table {
+    min-width: 100%;
+  }
+
+  .mobile-landscape-table th,
+  .mobile-landscape-table td {
+    padding: 0.5rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+  }
+
+  .mobile-landscape-table button {
+    min-height: 2rem;
+    height: auto;
+    padding: 0.35rem 0.5rem;
+    white-space: normal;
+    line-height: 1.1;
+  }
+
+  .mobile-landscape-table .table-action-group {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.375rem;
+  }
+
+  .mobile-landscape-table .table-primary-cell {
+    min-width: 9rem;
+  }
+}
+
+.responsive-due-dialog {
+  max-width: min(48rem, calc(100vw - 1rem));
+  padding: 1rem;
+}
+
+.responsive-due-table table {
+  table-layout: fixed;
+  min-width: 100%;
+}
+
+.responsive-due-table th,
+.responsive-due-table td {
+  padding: 0.625rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.responsive-due-table .due-person-cell {
+  width: 42%;
+}
+
+.responsive-due-table .due-amount-cell {
+  width: 18%;
+}
+
+.responsive-due-table .due-status-cell {
+  width: 22%;
+}
+
+@media (min-width: 640px) {
+  .responsive-due-dialog {
+    padding: 1.5rem;
+  }
+
+  .responsive-due-table th,
+  .responsive-due-table td {
+    padding: 1rem;
+    font-size: 0.875rem;
+  }
+}
