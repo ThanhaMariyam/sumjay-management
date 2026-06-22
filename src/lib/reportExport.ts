@@ -112,6 +112,38 @@ export function downloadCsvFile(rows: Record<string, ExportRowValue>[], filename
   triggerFileDownload(blob, filename);
 }
 
+export function downloadExcelFile(rows: Record<string, ExportRowValue>[], filename: string) {
+  if (rows.length === 0) {
+    const emptyBlob = new Blob(['No data found for selected filter'], { type: 'text/plain;charset=utf-8;' });
+    triggerFileDownload(emptyBlob, filename.replace(/\.xls$/i, '.txt'));
+    return;
+  }
+
+  const headers = Object.keys(rows[0]);
+  const escapeHtml = (value: ExportRowValue) =>
+    String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  const tableRows = rows
+    .map((row) => `<tr>${headers.map((header) => `<td>${escapeHtml(row[header] ?? '')}</td>`).join('')}</tr>`)
+    .join('');
+  const html = `
+    <html>
+      <head><meta charset="utf-8" /></head>
+      <body>
+        <table>
+          <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </body>
+    </html>
+  `;
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  triggerFileDownload(blob, filename);
+}
+
 export function downloadPdfTable(
   rows: Record<string, ExportRowValue>[],
   filename: string,

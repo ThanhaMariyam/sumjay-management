@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStudents, useAttendance, useFees, useMembers } from '../lib/hooks';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Users, CalendarCheck, IndianRupee, AlertCircle } from 'lucide-react';
-import { format } from 'date-fns';
+import { addMonths, format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
@@ -41,6 +41,7 @@ function CompactTooltip({ active, payload }: CompactTooltipProps) {
 const DEFAULT_FEE_AMOUNT = 1000;
 const DEFAULT_FUND_AMOUNT = 100;
 const DEFAULT_ANNUAL_FUND_AMOUNT = DEFAULT_FUND_AMOUNT * 12;
+const MONTHLY_FUND_ACCRUAL_START = '2026-06';
 
 export default function Dashboard() {
   const { isMembershipAdmin } = useAuth();
@@ -83,17 +84,47 @@ export default function Dashboard() {
     acc[fee.studentId] = fee;
     return acc;
   }, {} as Record<string, typeof monthFees[number]>);
+  const feeByStudentAndMonth = useMemo(() => {
+    return fees.reduce((acc, fee) => {
+      acc[`${fee.studentId}:${fee.month}`] = fee;
+      return acc;
+    }, {} as Record<string, typeof fees[number]>);
+  }, [fees]);
   const isAmountEqual = (a: number, b: number) => Math.abs(a - b) < 0.01;
   const isFullPayment = (paidAmount: number, expectedAmount: number) => (
     isMembershipAdmin
       ? paidAmount + 0.009 >= expectedAmount
       : isAmountEqual(paidAmount, expectedAmount)
   );
+  const getLocalFundLedger = (personId: string) => {
+    if (!isMembershipAdmin || memberRoleFilter === 'abroad' || monthStr < MONTHLY_FUND_ACCRUAL_START) {
+      const record = monthFeeMap[personId];
+      const expectedAmount = typeof record?.amount === 'number' && record.amount >= 0 ? record.amount : fallbackAmount;
+      const paidAmount = record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? expectedAmount) : 0;
+      return { expectedAmount, paidAmount, isPaid: record?.status === 'paid' };
+    }
+
+    let expectedAmount = 0;
+    let paidAmount = 0;
+    let periodDate = new Date(`${MONTHLY_FUND_ACCRUAL_START}-01T00:00:00`);
+    const endDate = new Date(`${monthStr}-01T00:00:00`);
+
+    while (periodDate <= endDate) {
+      const periodKey = format(periodDate, 'yyyy-MM');
+      const record = feeByStudentAndMonth[`${personId}:${periodKey}`];
+      expectedAmount += fallbackAmount;
+      if (record?.status === 'paid') {
+        paidAmount += record.paidAmount ?? record.amount ?? fallbackAmount;
+      }
+      periodDate = addMonths(periodDate, 1);
+    }
+
+    expectedAmount = Math.round(expectedAmount * 100) / 100;
+    paidAmount = Math.round(paidAmount * 100) / 100;
+    return { expectedAmount, paidAmount, isPaid: paidAmount > 0.009 };
+  };
   const monthlyPaymentRows = activePeople.map((person) => {
-    const record = monthFeeMap[person.id!];
-    const expectedAmount = typeof record?.amount === 'number' && record.amount >= 0 ? record.amount : fallbackAmount;
-    const paidAmount = record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? expectedAmount) : 0;
-    return { expectedAmount, paidAmount, isPaid: record?.status === 'paid' };
+    return getLocalFundLedger(person.id!);
   });
   const paidCount = monthlyPaymentRows.filter((row) => row.isPaid && isFullPayment(row.paidAmount, row.expectedAmount)).length;
   const partialPaidCount = monthlyPaymentRows.filter((row) => row.isPaid && !isFullPayment(row.paidAmount, row.expectedAmount)).length;
@@ -119,9 +150,7 @@ export default function Dashboard() {
   const dueStudents = useMemo(() => {
     return activePeople
       .map((student) => {
-        const record = monthFeeMap[student.id!];
-        const expectedAmount = typeof record?.amount === 'number' && record.amount >= 0 ? record.amount : fallbackAmount;
-        const paidAmount = record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? expectedAmount) : 0;
+        const { expectedAmount, paidAmount } = getLocalFundLedger(student.id!);
         const balanceAmount = Math.max(expectedAmount - paidAmount, 0);
         return {
           id: student.id!,

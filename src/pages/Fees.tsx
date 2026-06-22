@@ -22,6 +22,7 @@ const DEFAULT_FEE_AMOUNT = 1000;
 const DEFAULT_FUND_AMOUNT = 100;
 const DEFAULT_ANNUAL_FUND_AMOUNT = DEFAULT_FUND_AMOUNT * 12;
 const DEFAULT_AMOUNT_STORAGE_KEY = 'sumjay.defaultAmounts';
+const MONTHLY_FUND_ACCRUAL_START = '2026-06';
 const PAGE_SIZE = 10;
 
 type DefaultAmountKey = 'student' | 'memberLocal' | 'memberAbroad';
@@ -127,6 +128,69 @@ export default function Fees() {
     return record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? expectedAmount) : 0;
   };
 
+  const getLocalFundLedger = (studentId: string, endMonth = fundPeriodKey) => {
+    const monthlyAmount = getStudentAmount(studentId);
+    if (!isMembershipAdmin || isAnnualFund || monthlyAmount <= 0 || endMonth < MONTHLY_FUND_ACCRUAL_START) {
+      const record = feeByStudentAndMonth[`${studentId}:${endMonth}`];
+      const paidAmount = record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? monthlyAmount) : 0;
+      return {
+        expectedAmount: monthlyAmount,
+        paidAmount,
+        balanceAmount: Math.max(monthlyAmount - paidAmount, 0),
+      };
+    }
+
+    let expectedAmount = 0;
+    let paidAmount = 0;
+    let periodDate = new Date(`${MONTHLY_FUND_ACCRUAL_START}-01T00:00:00`);
+    const endDate = new Date(`${endMonth}-01T00:00:00`);
+
+    while (periodDate <= endDate) {
+      const periodKey = format(periodDate, 'yyyy-MM');
+      const record = feeByStudentAndMonth[`${studentId}:${periodKey}`];
+      expectedAmount += monthlyAmount;
+      if (record?.status === 'paid') {
+        paidAmount += record.paidAmount ?? record.amount ?? monthlyAmount;
+      }
+      periodDate = addMonths(periodDate, 1);
+    }
+
+    expectedAmount = Math.round(expectedAmount * 100) / 100;
+    paidAmount = Math.round(paidAmount * 100) / 100;
+    return {
+      expectedAmount,
+      paidAmount,
+      balanceAmount: Math.max(expectedAmount - paidAmount, 0),
+    };
+  };
+
+  const getDisplayFeeState = (studentId: string) => {
+    if (isMembershipAdmin && !isAnnualFund) return getLocalFundLedger(studentId);
+    const expectedAmount = getStudentAmount(studentId);
+    const paidAmount = getPaidAmount(studentId);
+    return {
+      expectedAmount,
+      paidAmount,
+      balanceAmount: Math.max(expectedAmount - paidAmount, 0),
+    };
+  };
+
+  const getOldestUnsettledFundMonth = (studentId: string) => {
+    const monthlyAmount = getStudentAmount(studentId);
+    let periodDate = new Date(`${MONTHLY_FUND_ACCRUAL_START}-01T00:00:00`);
+    const endDate = new Date(`${fundPeriodKey}-01T00:00:00`);
+
+    while (periodDate <= endDate) {
+      const periodKey = format(periodDate, 'yyyy-MM');
+      const record = feeByStudentAndMonth[`${studentId}:${periodKey}`];
+      const paidAmount = record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? monthlyAmount) : 0;
+      if (Math.max(monthlyAmount - paidAmount, 0) > 0.009) return periodKey;
+      periodDate = addMonths(periodDate, 1);
+    }
+
+    return fundPeriodKey;
+  };
+
   const getLocalFundSummary = (studentId: string) => {
     const monthlyAmount = parseAmount(defaultAmount);
     const memberFees = fees
@@ -177,33 +241,34 @@ export default function Fees() {
   }, [students, isMembershipAdmin, memberRoleFilter]);
 
   const totals = useMemo(() => {
-    const expected = roleFilteredStudents.reduce((sum, student) => sum + getStudentAmount(student.id!), 0);
-    const received = roleFilteredStudents.reduce((sum, student) => {
+    const selected = roleFilteredStudents.reduce((acc, student) => {
+      const expectedAmount = getStudentAmount(student.id!);
       const record = feeMap[student.id!];
-      if (record?.status !== 'paid') return sum;
-      const paidAmount = typeof record.paidAmount === 'number'
-        ? record.paidAmount
-        : (typeof record.amount === 'number' ? record.amount : getStudentAmount(student.id!));
-      return sum + paidAmount;
-    }, 0);
-    const pending = roleFilteredStudents.reduce((sum, student) => {
-      const record = feeMap[student.id!];
-      const feeAmount = getStudentAmount(student.id!);
       const paidAmount = record?.status === 'paid'
-        ? (record.paidAmount ?? record.amount ?? feeAmount)
+        ? (record.paidAmount ?? record.amount ?? expectedAmount)
         : 0;
-      return sum + Math.max(feeAmount - paidAmount, 0);
-    }, 0);
-    return { expected, received, pending };
-  }, [roleFilteredStudents, feeMap, defaultAmount]);
+      acc.expected += expectedAmount;
+      acc.received += paidAmount;
+      acc.pending += Math.max(expectedAmount - paidAmount, 0);
+      return acc;
+    }, { expected: 0, received: 0, pending: 0 });
+
+    const untilSelected = roleFilteredStudents.reduce((acc, student) => {
+      const state = getDisplayFeeState(student.id!);
+      acc.expected += state.expectedAmount;
+      acc.received += state.paidAmount;
+      acc.pending += state.balanceAmount;
+      return acc;
+    }, { expected: 0, received: 0, pending: 0 });
+
+    return { selected, untilSelected };
+  }, [roleFilteredStudents, feeMap, feeByStudentAndMonth, defaultAmount, isMembershipAdmin, isAnnualFund, fundPeriodKey]);
 
   const dueStudents = useMemo(() => {
     return roleFilteredStudents
       .map((student) => {
         const record = feeMap[student.id!];
-        const expectedAmount = getStudentAmount(student.id!);
-        const paidAmount = record?.status === 'paid' ? (record.paidAmount ?? record.amount ?? expectedAmount) : 0;
-        const balanceAmount = Math.max(expectedAmount - paidAmount, 0);
+        const { paidAmount, balanceAmount } = getDisplayFeeState(student.id!);
         return {
           id: student.id!,
           name: student.name,
@@ -214,7 +279,7 @@ export default function Fees() {
         };
       })
       .filter((row) => row.balanceAmount > 0);
-  }, [roleFilteredStudents, feeMap, defaultAmount, isMembershipAdmin]);
+  }, [roleFilteredStudents, feeMap, feeByStudentAndMonth, defaultAmount, isMembershipAdmin, isAnnualFund, fundPeriodKey]);
 
   const topExtraPaidMembers = useMemo(() => {
     if (!isMembershipAdmin || !isAnnualFund) return new Map<string, number>();
@@ -245,11 +310,10 @@ export default function Fees() {
     })
       : roleFilteredStudents;
 
-    if (!isMembershipAdmin || !isAnnualFund) return visibleStudents;
     return visibleStudents
       .slice()
-      .sort((a, b) => getPaidAmount(b.id!) - getPaidAmount(a.id!));
-  }, [roleFilteredStudents, searchTerm, isMembershipAdmin, isAnnualFund, feeMap, defaultAmount]);
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  }, [roleFilteredStudents, searchTerm, isMembershipAdmin]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -323,7 +387,7 @@ export default function Fees() {
       const paidOn = format(new Date(), 'yyyy-MM-dd');
       const paidAt = Date.now();
       let remainingAmount = receivedAmount;
-      let periodDate = new Date(`${month}-01T00:00:00`);
+      let periodDate = new Date(`${getOldestUnsettledFundMonth(studentId)}-01T00:00:00`);
 
       while (remainingAmount > 0.009) {
         const periodKey = format(periodDate, 'yyyy-MM');
@@ -509,12 +573,7 @@ export default function Fees() {
   };
 
   const openPaidAmountDialog = (studentId: string, mode: 'paid' | 'partial') => {
-    const record = feeMap[studentId];
-    const expectedAmount = getStudentAmount(studentId);
-    const currentPaidAmount = record?.status === 'paid'
-      ? (record.paidAmount ?? record.amount ?? expectedAmount)
-      : 0;
-    const balanceAmount = Math.max(expectedAmount - currentPaidAmount, 0);
+    const { balanceAmount } = getDisplayFeeState(studentId);
     setSelectedStudentId(studentId);
     setPaymentDialogMode(mode);
     setPaymentAmountInput(mode === 'paid' && balanceAmount > 0 ? String(balanceAmount) : '');
@@ -522,12 +581,13 @@ export default function Fees() {
   };
 
   const handleMarkFullPaid = async (studentId: string) => {
-    const expectedAmount = getStudentAmount(studentId);
+    const displayState = getDisplayFeeState(studentId);
     const record = feeMap[studentId];
+    const expectedAmount = displayState.expectedAmount;
     const currentPaidAmount = record?.status === 'paid'
       ? (record.paidAmount ?? record.amount ?? expectedAmount)
       : 0;
-    const balanceAmount = Math.max(expectedAmount - currentPaidAmount, 0);
+    const balanceAmount = displayState.balanceAmount;
     if (balanceAmount <= 0.009) return;
     if (isMembershipAdmin && !isAnnualFund) {
       await handleLocalFundPayment(studentId, balanceAmount);
@@ -544,11 +604,12 @@ export default function Fees() {
       return;
     }
     const record = feeMap[selectedStudentId];
-    const expectedAmount = getStudentAmount(selectedStudentId);
+    const displayState = getDisplayFeeState(selectedStudentId);
+    const expectedAmount = displayState.expectedAmount;
     const currentPaidAmount = record?.status === 'paid'
       ? (record.paidAmount ?? record.amount ?? expectedAmount)
       : 0;
-    const balanceAmount = Math.max(expectedAmount - currentPaidAmount, 0);
+    const balanceAmount = displayState.balanceAmount;
     if (isMembershipAdmin && !isAnnualFund) {
       const ok = await handleLocalFundPayment(selectedStudentId, addAmount);
       if (!ok) return;
@@ -628,15 +689,21 @@ export default function Fees() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="rounded-lg border bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">Total Expected</p>
-          <p className="text-xl font-bold text-primary">{formatAmount(totals.expected)}</p>
+          <p className="text-xl font-bold text-primary">{formatAmount(totals.selected.expected)}</p>
+          <p className="mt-1 text-xs text-gray-500">{fundPeriodLabel}: {formatAmount(totals.selected.expected)}</p>
+          <p className="text-xs text-gray-500">Until {fundPeriodLabel}: {formatAmount(totals.untilSelected.expected)}</p>
         </div>
         <div className="rounded-lg border bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">Total Received</p>
-          <p className="text-xl font-bold text-green-600">{formatAmount(totals.received)}</p>
+          <p className="text-xl font-bold text-green-600">{formatAmount(totals.selected.received)}</p>
+          <p className="mt-1 text-xs text-gray-500">{fundPeriodLabel}: {formatAmount(totals.selected.received)}</p>
+          <p className="text-xs text-gray-500">Until {fundPeriodLabel}: {formatAmount(totals.untilSelected.received)}</p>
         </div>
         <div className="rounded-lg border bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">Balance Pending</p>
-          <p className="text-xl font-bold text-orange-600">{formatAmount(totals.pending)}</p>
+          <p className="text-xl font-bold text-orange-600">{formatAmount(totals.selected.pending)}</p>
+          <p className="mt-1 text-xs text-gray-500">{fundPeriodLabel}: {formatAmount(totals.selected.pending)}</p>
+          <p className="text-xs text-gray-500">Until {fundPeriodLabel}: {formatAmount(totals.untilSelected.pending)}</p>
         </div>
       </div>
 
@@ -657,13 +724,9 @@ export default function Fees() {
         ) : (
           paginatedStudents.map((student) => {
             const record = feeMap[student.id!];
-            const feeAmount = getStudentAmount(student.id!);
-            const paidAmount = record?.status === 'paid'
-              ? (record.paidAmount ?? record.amount ?? feeAmount)
-              : 0;
-            const balanceAmount = Math.max(feeAmount - paidAmount, 0);
-            const isPaidExact = record?.status === 'paid' && (isMembershipAdmin ? paidAmount + 0.009 >= feeAmount : Math.abs(paidAmount - feeAmount) < 0.01);
-            const hasPaidMismatch = record?.status === 'paid' && !isPaidExact;
+            const { expectedAmount: feeAmount, paidAmount, balanceAmount } = getDisplayFeeState(student.id!);
+            const isPaidExact = isMembershipAdmin ? balanceAmount <= 0.009 : record?.status === 'paid' && Math.abs(paidAmount - feeAmount) < 0.01;
+            const hasPaidMismatch = paidAmount > 0.009 && !isPaidExact;
             const isLocalFund = isMembershipAdmin && !isAnnualFund;
             const localFundSummary = isLocalFund ? getLocalFundSummary(student.id!) : null;
             const isOverdue = !record || record.status === 'unpaid';
@@ -817,13 +880,9 @@ export default function Fees() {
             ) : (
               paginatedStudents.map(student => {
                 const record = feeMap[student.id!];
-                const feeAmount = getStudentAmount(student.id!);
-                const paidAmount = record?.status === 'paid'
-                  ? (record.paidAmount ?? record.amount ?? feeAmount)
-                  : 0;
-                const balanceAmount = Math.max(feeAmount - paidAmount, 0);
-                const isPaidExact = record?.status === 'paid' && (isMembershipAdmin ? paidAmount + 0.009 >= feeAmount : Math.abs(paidAmount - feeAmount) < 0.01);
-                const hasPaidMismatch = record?.status === 'paid' && !isPaidExact;
+                const { expectedAmount: feeAmount, paidAmount, balanceAmount } = getDisplayFeeState(student.id!);
+                const isPaidExact = isMembershipAdmin ? balanceAmount <= 0.009 : record?.status === 'paid' && Math.abs(paidAmount - feeAmount) < 0.01;
+                const hasPaidMismatch = paidAmount > 0.009 && !isPaidExact;
                 const isLocalFund = isMembershipAdmin && !isAnnualFund;
                 const localFundSummary = isLocalFund ? getLocalFundSummary(student.id!) : null;
                 // Show warning as soon as a row is marked unpaid (or no payment exists yet).
@@ -980,9 +1039,7 @@ export default function Fees() {
                   Already paid:{' '}
                   <span className="font-medium text-green-700">
                     {formatAmount(
-                      feeMap[selectedStudent.id!]?.status === 'paid'
-                        ? (feeMap[selectedStudent.id!]?.paidAmount ?? feeMap[selectedStudent.id!]?.amount ?? getStudentAmount(selectedStudent.id!))
-                        : 0,
+                      getDisplayFeeState(selectedStudent.id!).paidAmount,
                     )}
                   </span>
                 </p>
@@ -990,14 +1047,7 @@ export default function Fees() {
                   Balance:{' '}
                   <span className="font-medium text-orange-700">
                     {formatAmount(
-                      Math.max(
-                        getStudentAmount(selectedStudent.id!) - (
-                          feeMap[selectedStudent.id!]?.status === 'paid'
-                            ? (feeMap[selectedStudent.id!]?.paidAmount ?? feeMap[selectedStudent.id!]?.amount ?? getStudentAmount(selectedStudent.id!))
-                            : 0
-                        ),
-                        0,
-                      ),
+                      getDisplayFeeState(selectedStudent.id!).balanceAmount,
                     )}
                   </span>
                 </p>
@@ -1015,7 +1065,7 @@ export default function Fees() {
                 autoFocus
               />
               <p className="text-xs text-gray-500">
-                {isAnnualFund ? 'Yearly' : 'Monthly'} amount to be paid: {formatAmount(parseAmount(defaultAmount))}
+                {isAnnualFund ? 'Yearly' : 'Monthly'} amount to be paid: {formatAmount(selectedStudent ? getDisplayFeeState(selectedStudent.id!).expectedAmount : parseAmount(defaultAmount))}
               </p>
             </div>
             <div className="flex justify-end gap-2">

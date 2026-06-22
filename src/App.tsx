@@ -13,6 +13,7 @@ import Dashboard from './pages/Dashboard';
 import Students from './pages/Students';
 import Attendance from './pages/Attendance';
 import Fees from './pages/Fees';
+import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import UserDashboard from './pages/UserDashboard';
 import UserProfile from './pages/UserProfile';
@@ -56,6 +57,7 @@ function RouteTransition() {
             <Route path="students" element={<Students />} />
             <Route path="attendance" element={isMembershipAdmin ? <Navigate to="/" replace /> : <Attendance />} />
             <Route path="fees" element={<Fees />} />
+            <Route path="expenses" element={<Expenses />} />
             <Route path="reports" element={<Reports />} />
           </Route>
           <Route path="/user" element={<MemberRoute><UserLayout /></MemberRoute>}>

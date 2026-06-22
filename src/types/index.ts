@@ -58,3 +58,15 @@ export interface Fee {
   createdAt: number;
   updatedAt?: number;
 }
+
+export interface Expense {
+  id?: string;
+  adminId: string;
+  type?: 'income' | 'expense';
+  amount: number;
+  note: string;
+  category: string;
+  spentOn: string;    // YYYY-MM-DD
+  createdAt: number;
+  updatedAt?: number;
+}

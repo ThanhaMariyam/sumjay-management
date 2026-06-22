@@ -53,15 +53,17 @@ export default function Students() {
 
   const filteredStudents = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    return students.filter((student) => {
-      const roleLabel = student.memberRole === 'abroad' ? 'abroad' : 'local';
-      if (isMembershipAdmin && roleLabel !== memberRoleFilter) {
-        return false;
-      }
-      if (!query) return true;
-      const searchable = `${student.name} ${student.dob} ${student.place} ${contactValue(student)} ${student.bloodGroup || ''} ${student.email || ''} ${roleLabel}`.toLowerCase();
-      return searchable.includes(query);
-    });
+    return students
+      .filter((student) => {
+        const roleLabel = student.memberRole === 'abroad' ? 'abroad' : 'local';
+        if (isMembershipAdmin && roleLabel !== memberRoleFilter) {
+          return false;
+        }
+        if (!query) return true;
+        const searchable = `${student.name} ${student.dob} ${student.place} ${contactValue(student)} ${student.bloodGroup || ''} ${student.email || ''} ${roleLabel}`.toLowerCase();
+        return searchable.includes(query);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   }, [students, searchTerm, isMembershipAdmin, memberRoleFilter]);
 
   useEffect(() => {

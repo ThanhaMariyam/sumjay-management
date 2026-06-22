@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { Users, CalendarCheck, IndianRupee, LayoutDashboard, FileText, Menu, LogOut } from 'lucide-react';
+import { Users, CalendarCheck, IndianRupee, LayoutDashboard, FileText, Menu, LogOut, ReceiptText } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { Button } from './ui/button';
 import sumjayLogo from '../assets/sumjay-logo.png';
@@ -15,6 +15,7 @@ const navItems = [
   { href: '/students', label: 'Students', icon: Users },
   { href: '/attendance', label: 'Attendance', icon: CalendarCheck },
   { href: '/fees', label: 'Fees', icon: IndianRupee },
+  { href: '/expenses', label: 'Expenses', icon: ReceiptText },
   { href: '/reports', label: 'Reports', icon: FileText },
 ];
 

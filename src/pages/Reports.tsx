@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useStudents, useAttendance, useFees } from '../lib/hooks';
+import { useStudents, useAttendance, useFees, useExpenses } from '../lib/hooks';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -21,8 +21,8 @@ import {
   startOfWeek,
   startOfYear,
 } from 'date-fns';
-import { downloadCsvFile, downloadPdfTable } from '../lib/reportExport';
-import { Fee, MemberRole } from '../types';
+import { downloadCsvFile, downloadExcelFile, downloadPdfTable } from '../lib/reportExport';
+import { Expense, Fee, MemberRole } from '../types';
 import { useAuth } from '../lib/AuthContext';
 import { useMemberRoleFilter } from '../lib/memberRoleFilter';
 
@@ -62,17 +62,38 @@ function getFeeRecordDate(fee: Fee) {
   return isValid(monthDate) ? monthDate : null;
 }
 
+function getManualFinanceDate(entry: Expense) {
+  const spentOnDate = parseISO(entry.spentOn);
+  if (isValid(spentOnDate)) return spentOnDate;
+  if (typeof entry.updatedAt === 'number') {
+    const updatedDate = new Date(entry.updatedAt);
+    if (isValid(updatedDate)) return updatedDate;
+  }
+  if (typeof entry.createdAt === 'number') {
+    const createdDate = new Date(entry.createdAt);
+    if (isValid(createdDate)) return createdDate;
+  }
+  return null;
+}
+
+function getFinanceEntryType(entry: Expense) {
+  return entry.type === 'income' ? 'Income' : 'Expense';
+}
+
 export default function Reports() {
   const { isMembershipAdmin } = useAuth();
   const { students } = useStudents(isMembershipAdmin ? 'members' : 'students');
   const { attendance } = useAttendance();
   const { fees } = useFees();
+  const { expenses } = useExpenses();
   const [filterType, setFilterType] = useState<FilterType>('month');
   const [attendanceSearchTerm, setAttendanceSearchTerm] = useState('');
   const [feesSearchTerm, setFeesSearchTerm] = useState('');
+  const [financeSearchTerm, setFinanceSearchTerm] = useState('');
   const { memberRoleFilter, setMemberRoleFilter } = useMemberRoleFilter();
   const [attendancePage, setAttendancePage] = useState(1);
   const [feesPage, setFeesPage] = useState(1);
+  const [financePage, setFinancePage] = useState(1);
   const defaultAmount = isMembershipAdmin
     ? (memberRoleFilter === 'abroad' ? DEFAULT_ANNUAL_FUND_AMOUNT : DEFAULT_FUND_AMOUNT)
     : DEFAULT_FEE_AMOUNT;
@@ -184,6 +205,14 @@ export default function Reports() {
     });
   }, [fees, start, end, reportStudentIds]);
 
+  const filteredFinanceFees = useMemo(() => {
+    return fees.filter((fee) => {
+      const date = getFeeRecordDate(fee);
+      if (!date) return false;
+      return isInRange(date, start, end);
+    });
+  }, [fees, start, end]);
+
   const feesRows = useMemo(() => {
     return filteredFees.map((fee) => {
       const recordDate = getFeeRecordDate(fee);
@@ -234,6 +263,53 @@ export default function Reports() {
     return { totalExpected, totalCollected, totalPending };
   }, [filteredFees, defaultAmount]);
 
+  const filteredManualFinance = useMemo(() => {
+    return expenses.filter((entry) => {
+      const date = getManualFinanceDate(entry);
+      if (!date) return false;
+      return isInRange(date, start, end);
+    });
+  }, [expenses, start, end]);
+
+  const financeRows = useMemo(() => {
+    return filteredManualFinance
+      .slice()
+      .sort((a, b) => (b.spentOn ?? '').localeCompare(a.spentOn ?? '') || (b.createdAt ?? 0) - (a.createdAt ?? 0))
+      .map((entry) => ({
+        Date: entry.spentOn,
+        Type: getFinanceEntryType(entry),
+        Category: entry.category,
+        Note: entry.note,
+        Income: entry.type === 'income' ? entry.amount : 0,
+        Expense: entry.type === 'income' ? 0 : entry.amount,
+      }));
+  }, [filteredManualFinance]);
+
+  const financeSummary = useMemo(() => {
+    const feeIncome = filteredFinanceFees.reduce((sum, fee) => {
+      const normalizedStatus = String(fee.status || '').toLowerCase();
+      if (normalizedStatus !== 'paid') return sum;
+      const expectedAmount = typeof fee.amount === 'number' && fee.amount >= 0
+        ? fee.amount
+        : (isMembershipAdmin ? DEFAULT_FUND_AMOUNT : DEFAULT_FEE_AMOUNT);
+      const paidAmount = typeof fee.paidAmount === 'number' && fee.paidAmount >= 0 ? fee.paidAmount : expectedAmount;
+      return sum + paidAmount;
+    }, 0);
+    const manualIncome = filteredManualFinance.reduce((sum, entry) => (
+      entry.type === 'income' ? sum + entry.amount : sum
+    ), 0);
+    const manualExpense = filteredManualFinance.reduce((sum, entry) => (
+      entry.type === 'income' ? sum : sum + entry.amount
+    ), 0);
+    return {
+      feeIncome,
+      manualIncome,
+      totalIncome: feeIncome + manualIncome,
+      totalExpense: manualExpense,
+      balance: feeIncome + manualIncome - manualExpense,
+    };
+  }, [filteredFinanceFees, filteredManualFinance, isMembershipAdmin]);
+
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value);
   const formatPdfAmount = (value: number) =>
@@ -246,6 +322,10 @@ export default function Reports() {
   const feesHeaders = useMemo(
     () => (feesRows.length > 0 ? Object.keys(feesRows[0]) : ['Date', 'Name', 'Paid', 'Balance', 'Status']),
     [feesRows],
+  );
+  const financeHeaders = useMemo(
+    () => (financeRows.length > 0 ? Object.keys(financeRows[0]) : ['Date', 'Type', 'Category', 'Note', 'Income', 'Expense']),
+    [financeRows],
   );
 
   const filteredAttendanceRows = useMemo(() => {
@@ -264,6 +344,14 @@ export default function Reports() {
     );
   }, [feesRows, feesSearchTerm]);
 
+  const filteredFinanceRows = useMemo(() => {
+    const query = financeSearchTerm.trim().toLowerCase();
+    if (!query) return financeRows;
+    return financeRows.filter((row) =>
+      Object.values(row).some((value) => String(value).toLowerCase().includes(query)),
+    );
+  }, [financeRows, financeSearchTerm]);
+
   useEffect(() => {
     setAttendancePage(1);
   }, [attendanceSearchTerm, attendanceRows.length, filterType, memberRoleFilter]);
@@ -271,6 +359,10 @@ export default function Reports() {
   useEffect(() => {
     setFeesPage(1);
   }, [feesSearchTerm, feesRows.length, filterType, memberRoleFilter]);
+
+  useEffect(() => {
+    setFinancePage(1);
+  }, [financeSearchTerm, financeRows.length, filterType]);
 
   const paginatedAttendanceRows = useMemo(() => {
     const startIndex = (attendancePage - 1) * PAGE_SIZE;
@@ -282,13 +374,20 @@ export default function Reports() {
     return filteredFeesRows.slice(startIndex, startIndex + PAGE_SIZE);
   }, [filteredFeesRows, feesPage]);
 
-  const downloadReport = (type: 'attendance' | 'fees', formatType: 'csv' | 'pdf') => {
+  const paginatedFinanceRows = useMemo(() => {
+    const startIndex = (financePage - 1) * PAGE_SIZE;
+    return filteredFinanceRows.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [filteredFinanceRows, financePage]);
+
+  const downloadReport = (type: 'attendance' | 'fees' | 'finance', formatType: 'csv' | 'excel' | 'pdf') => {
     const dateSuffix = format(new Date(), 'yyyyMMdd');
 
     if (type === 'attendance') {
-      const filename = `attendance_report_${filterType}_${dateSuffix}.${formatType}`;
+      const filename = `attendance_report_${filterType}_${dateSuffix}.${formatType === 'excel' ? 'xls' : formatType}`;
       if (formatType === 'csv') {
         downloadCsvFile(attendanceRows, filename);
+      } else if (formatType === 'excel') {
+        downloadExcelFile(attendanceRows, filename);
       } else {
         const presentCount = attendancePdfRows.filter((row) => row.Status === 'PRESENT').length;
         const absentCount = attendancePdfRows.filter((row) => row.Status === 'ABSENT').length;
@@ -301,7 +400,34 @@ export default function Reports() {
       return;
     }
 
-    const filename = `fees_report_${filterType}_${dateSuffix}.${formatType}`;
+    if (type === 'finance') {
+      const filename = `finance_report_${filterType}_${dateSuffix}.${formatType === 'excel' ? 'xls' : formatType}`;
+      const summaryLines = [
+        `Fees/Fund Income: ${formatPdfAmount(financeSummary.feeIncome)}`,
+        `Other Income: ${formatPdfAmount(financeSummary.manualIncome)}`,
+        `Total Income: ${formatPdfAmount(financeSummary.totalIncome)}`,
+        `Total Expenses: ${formatPdfAmount(financeSummary.totalExpense)}`,
+        `Balance: ${formatPdfAmount(financeSummary.balance)}`,
+      ];
+      const summaryRows = [
+        { Date: '', Type: '', Category: '', Note: '', Income: '', Expense: '' },
+        { Date: '', Type: 'Fees/Fund Income', Category: '', Note: '', Income: financeSummary.feeIncome, Expense: '' },
+        { Date: '', Type: 'Other Income', Category: '', Note: '', Income: financeSummary.manualIncome, Expense: '' },
+        { Date: '', Type: 'Total Income', Category: '', Note: '', Income: financeSummary.totalIncome, Expense: '' },
+        { Date: '', Type: 'Total Expenses', Category: '', Note: '', Income: '', Expense: financeSummary.totalExpense },
+        { Date: '', Type: 'Balance', Category: '', Note: '', Income: financeSummary.balance, Expense: '' },
+      ];
+      if (formatType === 'excel') {
+        downloadExcelFile([...financeRows, ...summaryRows], filename);
+      } else if (formatType === 'csv') {
+        downloadCsvFile([...financeRows, ...summaryRows], filename.replace(/\.xls$/i, '.csv'));
+      } else {
+        downloadPdfTable(financeRows, filename, `Finance Report (${filterType})`, summaryLines);
+      }
+      return;
+    }
+
+    const filename = `fees_report_${filterType}_${dateSuffix}.${formatType === 'excel' ? 'xls' : formatType}`;
     const summaryLines = [
       `Total Expected: ${formatPdfAmount(feesSummary.totalExpected)}`,
       `Total Collected: ${formatPdfAmount(feesSummary.totalCollected)}`,
@@ -319,6 +445,13 @@ export default function Reports() {
         { Date: '', Name: 'Balance Pending', Paid: '', Balance: feesSummary.totalPending, Status: '' },
       ];
       downloadCsvFile([...feesCsvRows, ...summaryRows], filename);
+    } else if (formatType === 'excel') {
+      const summaryRows = [
+        { Date: '', Name: '', Paid: '', Balance: '', Status: '' },
+        { Date: '', Name: 'Total Amount Got', Paid: feesSummary.totalCollected, Balance: '', Status: '' },
+        { Date: '', Name: 'Balance Pending', Paid: '', Balance: feesSummary.totalPending, Status: '' },
+      ];
+      downloadExcelFile([...feesRows, ...summaryRows], filename);
     } else {
       downloadPdfTable(feesRows, filename, `Fees Report (${filterType})`, summaryLines);
     }
@@ -360,7 +493,7 @@ export default function Reports() {
         )}
       </div>
 
-      <div className={`grid grid-cols-1 ${isMembershipAdmin ? 'md:grid-cols-1' : 'md:grid-cols-2'} gap-6`}>
+      <div className={`grid grid-cols-1 ${isMembershipAdmin ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-6`}>
         {!isMembershipAdmin && <Card className="h-full">
           <CardHeader>
             <CardTitle>Attendance Report</CardTitle>
@@ -403,6 +536,32 @@ export default function Reports() {
               </Button>
               <Button
                 onClick={() => downloadReport('fees', 'pdf')}
+                className="flex-1 min-w-[140px] gap-2 justify-center"
+                variant="secondary"
+              >
+                <FileText className="w-4 h-4" />
+                Download PDF
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="h-full">
+          <CardHeader>
+            <CardTitle>Finance Report</CardTitle>
+            <CardDescription>Download income and expense history</CardDescription>
+          </CardHeader>
+          <CardContent className="mt-auto">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => downloadReport('finance', 'excel')}
+                className="flex-1 min-w-[140px] gap-2 justify-center"
+              >
+                <Download className="w-4 h-4" />
+                Download Excel
+              </Button>
+              <Button
+                onClick={() => downloadReport('finance', 'pdf')}
                 className="flex-1 min-w-[140px] gap-2 justify-center"
                 variant="secondary"
               >
@@ -516,6 +675,74 @@ export default function Reports() {
                 pageSize={PAGE_SIZE}
                 totalItems={filteredFeesRows.length}
                 onPageChange={setFeesPage}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Finance Report Table</CardTitle>
+            <CardDescription>Preview of manual income and expense entries for selected filter</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-md border bg-gray-50 p-3">
+                <p className="text-sm text-gray-500">Total Income</p>
+                <p className="text-lg font-semibold text-green-700">{formatCurrency(financeSummary.totalIncome)}</p>
+              </div>
+              <div className="rounded-md border bg-gray-50 p-3">
+                <p className="text-sm text-gray-500">Total Expenses</p>
+                <p className="text-lg font-semibold text-red-700">{formatCurrency(financeSummary.totalExpense)}</p>
+              </div>
+              <div className="rounded-md border bg-gray-50 p-3">
+                <p className="text-sm text-gray-500">Balance</p>
+                <p className={`text-lg font-semibold ${financeSummary.balance >= 0 ? 'text-primary' : 'text-red-700'}`}>{formatCurrency(financeSummary.balance)}</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <SearchInput
+                value={financeSearchTerm}
+                onChange={setFinanceSearchTerm}
+                placeholder="Search finance report"
+              />
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {financeHeaders.map((header) => (
+                      <TableHead key={header} className="whitespace-nowrap">
+                        {header}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredFinanceRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={financeHeaders.length} className="text-center text-gray-500">
+                        No manual income or expense entries for selected filter.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginatedFinanceRows.map((row, index) => (
+                      <TableRow key={`${row.Type}-${row.Category}-${row.Date}-${index}`}>
+                        {financeHeaders.map((header) => (
+                          <TableCell key={`${header}-${index}`} className="whitespace-nowrap">
+                            {header === 'Income' || header === 'Expense'
+                              ? formatCurrency(Number(row[header] ?? 0))
+                              : (row[header] ?? '-')}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              <Pagination
+                currentPage={financePage}
+                pageSize={PAGE_SIZE}
+                totalItems={filteredFinanceRows.length}
+                onPageChange={setFinancePage}
               />
             </div>
           </CardContent>

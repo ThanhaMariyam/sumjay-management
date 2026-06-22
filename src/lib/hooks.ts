@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError } from './firebase';
 import { useAuth } from './AuthContext';
-import { Student, Attendance, Fee, Member } from '../types';
+import { Student, Attendance, Fee, Member, Expense } from '../types';
 import { readSentWhatsAppMessageIds } from './whatsapp';
 
 export function useStudents(collectionName: 'students' | 'members' = 'students') {
@@ -251,4 +251,38 @@ export function useMemberFees(memberId?: string) {
   }, [user, isMemberUser, memberId]);
 
   return { fees, loading };
+}
+
+export function useExpenses() {
+  const { user } = useAuth();
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) {
+      setExpenses([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const q = query(collection(db, 'expenses'), where('adminId', '==', user.adminId));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as Expense))
+        .sort((a, b) => (b.spentOn ?? '').localeCompare(a.spentOn ?? '') || (b.createdAt ?? 0) - (a.createdAt ?? 0));
+      setExpenses(data);
+      setLoading(false);
+    }, (error) => {
+      try {
+        handleFirestoreError(error, 'list' as any, 'expenses');
+      } catch (e) {
+        console.error(e);
+      }
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [user]);
+
+  return { expenses, loading };
 }
