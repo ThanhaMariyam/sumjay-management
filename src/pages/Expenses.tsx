@@ -22,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { db, handleFirestoreError } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
-import { useExpenses, useFees } from '../lib/hooks';
+import { useExpenses, useFees, useStudents } from '../lib/hooks';
 import { Expense, Fee } from '../types';
 
 type FilterType = 'day' | 'month' | 'year';
@@ -75,6 +75,7 @@ function getEntryType(entry: Expense): EntryType {
 
 export default function Expenses() {
   const { user, isMembershipAdmin } = useAuth();
+  const { students, loading: studentsLoading } = useStudents(isMembershipAdmin ? 'members' : 'students');
   const { fees, loading: feesLoading } = useFees();
   const { expenses, loading: entriesLoading } = useExpenses();
   const [filterType, setFilterType] = useState<FilterType>('month');
@@ -96,9 +97,14 @@ export default function Expenses() {
     });
   }, [expenses, start, end]);
 
+  const feeOwnerIds = useMemo(() => {
+    return new Set(students.map((student) => student.id).filter(Boolean));
+  }, [students]);
+
   const feeIncome = useMemo(() => {
     return fees.reduce((sum, fee) => {
       if (fee.status !== 'paid') return sum;
+      if (!feeOwnerIds.has(fee.studentId)) return sum;
       const paidDate = getFeePaidDate(fee);
       if (!paidDate || !isInRange(paidDate, start, end)) return sum;
       const paidAmount = typeof fee.paidAmount === 'number' && fee.paidAmount >= 0
@@ -106,7 +112,7 @@ export default function Expenses() {
         : (typeof fee.amount === 'number' && fee.amount >= 0 ? fee.amount : 0);
       return sum + paidAmount;
     }, 0);
-  }, [fees, start, end]);
+  }, [fees, feeOwnerIds, start, end]);
 
   const manualIncome = useMemo(() => {
     return periodEntries
@@ -270,7 +276,7 @@ export default function Expenses() {
             <TrendingUp className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-700">{feesLoading ? '...' : formatAmount(totalIncome)}</div>
+            <div className="text-2xl font-bold text-green-700">{feesLoading || studentsLoading ? '...' : formatAmount(totalIncome)}</div>
             <p className="text-xs text-muted-foreground">
               {formatAmount(feeIncome)} {isMembershipAdmin ? 'members fund' : 'student fees'} + {formatAmount(manualIncome)} other income
             </p>

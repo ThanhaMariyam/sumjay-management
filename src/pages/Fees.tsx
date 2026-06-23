@@ -175,6 +175,15 @@ export default function Fees() {
     };
   };
 
+  const getPreviousLocalFundBalance = () => {
+    if (!isMembershipAdmin || isAnnualFund) return 0;
+    const previousMonth = format(addMonths(new Date(`${fundPeriodKey}-01T00:00:00`), -1), 'yyyy-MM');
+    if (previousMonth < MONTHLY_FUND_ACCRUAL_START) return 0;
+    return roleFilteredStudents.reduce((sum, student) => {
+      return sum + getLocalFundLedger(student.id!, previousMonth).balanceAmount;
+    }, 0);
+  };
+
   const getOldestUnsettledFundMonth = (studentId: string) => {
     const monthlyAmount = getStudentAmount(studentId);
     let periodDate = new Date(`${MONTHLY_FUND_ACCRUAL_START}-01T00:00:00`);
@@ -241,6 +250,7 @@ export default function Fees() {
   }, [students, isMembershipAdmin, memberRoleFilter]);
 
   const totals = useMemo(() => {
+    const previousLocalFundBalance = getPreviousLocalFundBalance();
     const selected = roleFilteredStudents.reduce((acc, student) => {
       const expectedAmount = getStudentAmount(student.id!);
       const record = feeMap[student.id!];
@@ -249,9 +259,11 @@ export default function Fees() {
         : 0;
       acc.expected += expectedAmount;
       acc.received += paidAmount;
-      acc.pending += Math.max(expectedAmount - paidAmount, 0);
       return acc;
     }, { expected: 0, received: 0, pending: 0 });
+    selected.expected = Math.round((selected.expected + previousLocalFundBalance) * 100) / 100;
+    selected.received = Math.round(selected.received * 100) / 100;
+    selected.pending = Math.round((selected.expected - selected.received) * 100) / 100;
 
     const untilSelected = roleFilteredStudents.reduce((acc, student) => {
       const state = getDisplayFeeState(student.id!);

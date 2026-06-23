@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { format } from 'date-fns';
+import { addMonths, format } from 'date-fns';
 import { ChevronDown, Crown, Flame, IndianRupee } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
@@ -13,6 +13,7 @@ import { cn } from '../lib/utils';
 
 const DEFAULT_FUND_AMOUNT = 100;
 const DEFAULT_ANNUAL_FUND_AMOUNT = DEFAULT_FUND_AMOUNT * 12;
+const MONTHLY_FUND_ACCRUAL_START = '2026-06';
 
 const formatAmount = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
@@ -29,12 +30,38 @@ export default function UserDashboard() {
   const currentYear = format(new Date(), 'yyyy');
   const currentPeriodKey = isAbroadMember ? `${currentYear}-01` : currentMonth;
   const currentPeriodLabel = isAbroadMember ? currentYear : format(new Date(`${currentMonth}-01`), 'MMMM yyyy');
-  const currentFee = fees.find((fee) => fee.month === currentPeriodKey);
+  const feeByMonth = useMemo(() => {
+    return fees.reduce((acc, fee) => {
+      acc[fee.month] = fee;
+      return acc;
+    }, {} as Record<string, typeof fees[number]>);
+  }, [fees]);
+  const currentFee = feeByMonth[currentPeriodKey];
   const expectedAmount = currentFee?.amount ?? (isAbroadMember ? DEFAULT_ANNUAL_FUND_AMOUNT : DEFAULT_FUND_AMOUNT);
   const paidAmount = currentFee?.status === 'paid'
     ? (currentFee.paidAmount ?? currentFee.amount ?? expectedAmount)
     : 0;
-  const balanceAmount = Math.max(expectedAmount - paidAmount, 0);
+  const balanceAmount = useMemo(() => {
+    if (isAbroadMember) return Math.max(expectedAmount - paidAmount, 0);
+
+    let expected = 0;
+    let paid = 0;
+    let periodDate = new Date(`${MONTHLY_FUND_ACCRUAL_START}-01T00:00:00`);
+    const endDate = new Date(`${currentPeriodKey}-01T00:00:00`);
+
+    while (periodDate <= endDate) {
+      const periodKey = format(periodDate, 'yyyy-MM');
+      const record = feeByMonth[periodKey];
+      const amount = record?.amount ?? DEFAULT_FUND_AMOUNT;
+      expected += amount;
+      if (record?.status === 'paid') {
+        paid += record.paidAmount ?? record.amount ?? amount;
+      }
+      periodDate = addMonths(periodDate, 1);
+    }
+
+    return Math.max(Math.round((expected - paid) * 100) / 100, 0);
+  }, [isAbroadMember, expectedAmount, paidAmount, currentPeriodKey, feeByMonth]);
   const filteredMembers = useMemo(() => {
     return allMembers.filter((row) => (row.memberRole === 'abroad' ? 'abroad' : 'local') === memberRoleFilter);
   }, [allMembers, memberRoleFilter]);
